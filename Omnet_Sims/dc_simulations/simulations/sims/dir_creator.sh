@@ -2,6 +2,7 @@ mkdir logs
 mkdir figs
 mkdir extracted_results
 
+sudo mkdir extracted_results/CWND
 sudo mkdir extracted_results/FLOW_ENDED
 sudo mkdir extracted_results/FLOW_ENDED_QUERY_ID
 sudo mkdir extracted_results/FLOW_STARTED_QUERY_ID
