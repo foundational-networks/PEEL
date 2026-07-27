@@ -8,7 +8,7 @@ import sys
 Fattree = 0
 Leafspine = 1
 
-RESULT_FILES_DIR = './results/'
+RESULT_FILES_DIR = '../extracted_results/'
 UNDER_SAME_RACK = 1
 LEAF_SPINE = 2
 TOPOLOGY = LEAF_SPINE

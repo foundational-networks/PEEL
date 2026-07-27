@@ -1,5 +1,0 @@
-kernel_name,Hits,Samples
-"ncclDevKernel_SendRecv(ncclDevComm*, unsigned long, ncclWork*)",1680,1680
-"ncclDevKernel_AllReduce_Sum_f32_RING_LL(ncclDevComm*, unsigned long, ncclWork*)",48816,48816
-"ncclDevKernel_AllReduce_Sum_f32_TREE_LL(ncclDevComm*, unsigned long, ncclWork*)",5424,5424
-"ncclDevKernel_AllGather_RING_LL(ncclDevComm*, unsigned long, ncclWork*)",44080,44080
