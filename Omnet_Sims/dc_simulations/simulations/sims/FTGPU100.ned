@@ -13,7 +13,7 @@
 // along with this program.  If not, see http://www.gnu.org/licenses/.
 // 
 
-package dc_simulations.simulations.Two_Layer_Leaf_Spine;
+package dc_simulations.simulations.sims;
 
 import inet.networklayer.common.InterfaceTable;
 import inet.networklayer.arp.ipv4.GlobalArp;
