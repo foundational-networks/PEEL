@@ -8,14 +8,13 @@ import sys
 Fattree = 0
 Leafspine = 1
 
-RESULT_FILES_DIR = '../extracted_results/'
+RESULT_FILES_DIR = './results/'
 UNDER_SAME_RACK = 1
 LEAF_SPINE = 2
 TOPOLOGY = LEAF_SPINE
 REP_NUM = 1
 
-OUTPUT_FILE_DIRECTORY_BASE = '/home/sepehr/Desktop/leaf\\ spine'
-OUTPUT_FILE_DIRECTORY = '{}/Constant\\ Network\\ Load/'.format(OUTPUT_FILE_DIRECTORY_BASE)
+OUTPUT_FILE_DIRECTORY = '../extracted_results/'
 
 if(len(sys.argv) > 1):
     add_category = sys.argv[1]
