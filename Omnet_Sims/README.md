@@ -93,7 +93,7 @@ git submodule update
 Every scenario with [large-scale simulation](#step-6-running-the-large-scale-simulations-and-extracting-the-results) configurations takes days or even weeks to complete. Accordingly, we are providing a small-scale sample in which we run a single Broadcast collective with 8 MB messages among 64 nodes and compare the results of various techniques for those interested in evaluating the code in a short time. First, make sure that you are in the right directory ("PEEL/Omnet_Sims/dc_simulations/simulations/sims") and then use the following commands to extract the distribution files:
 
 ```
-bash extract_dist_files_LS_sample.sh
+bash extract_dist_files_sample.sh
 ./run_sample.sh 
 ```
 
