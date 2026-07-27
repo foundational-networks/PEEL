@@ -1,0 +1,376 @@
+//
+// Copyright (C) 2004 Andras Varga
+// Copyright (C) 2006 Levente Meszaros
+// Copyright (C) 2011 Zoltan Bojthe
+//
+// This program is free software; you can redistribute it and/or
+// modify it under the terms of the GNU Lesser General Public License
+// as published by the Free Software Foundation; either version 2
+// of the License, or (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU Lesser General Public License for more details.
+//
+// You should have received a copy of the GNU Lesser General Public License
+// along with this program; if not, see <http://www.gnu.org/licenses/>.
+//
+
+#ifndef __INET_ETHERMACBASE_H
+#define __INET_ETHERMACBASE_H
+
+#include "inet/common/INETDefs.h"
+#include "inet/common/INETMath.h"
+#include "inet/common/lifecycle/ILifecycle.h"
+#include "inet/common/lifecycle/NodeStatus.h"
+#include "inet/common/packet/Packet.h"
+#include "inet/queueing/contract/IPacketQueue.h"
+#include "inet/linklayer/base/MacProtocolBase.h"
+#include "inet/linklayer/common/MacAddress.h"
+#include "inet/linklayer/ethernet/EtherFrame_m.h"
+#include "inet/networklayer/common/InterfaceEntry.h"
+#include "unordered_map"
+
+namespace inet {
+
+class INET_API CCFlowInfo
+{
+
+  public:
+
+    enum CCMsgKing {
+        CC_SEND = 1,
+        DCQCN_INCREASE,
+        DCQCN_ALPHA
+    };
+
+    unsigned long flow_id;
+    simtime_t sender_previous_cnp_reaction_time;
+    double alpha, g;
+    double curr_rate, target_rate, max_rate;
+    unsigned long BC, T, byte_counter;
+    cMessage *increase_timer = nullptr;
+    cMessage *send_timer = nullptr;
+    cMessage *alpha_timer = nullptr;
+    double increase_timer_gap, alpha_timer_gap;
+    std::list<Packet*> packet_list;
+    std::string application_name;
+    std::string application_full_path;
+    int has_more_packets;
+    int src_gpu_idx;
+    unsigned long query_id = 0;
+    simtime_t swift_last_rate_decrease = 0;
+//    double swift_cwnd_pkt_num = 0;
+//    double swift_max_cwnd_pkt_num = 0;
+
+    int collective, algorithm;
+
+    // for dcqcn
+    CCFlowInfo(unsigned long flow_id, double init_alpha, double init_g, double max_rate, unsigned long init_byte_counter,
+                double increase_timer_gap, double alpha_timer_gap, int gpu_idx) {
+        this->flow_id = flow_id;
+        this->sender_previous_cnp_reaction_time = 0;
+        this->alpha = init_alpha;
+        this->g = init_g;
+        this->curr_rate = max_rate;
+        this->target_rate = max_rate;
+        this->max_rate = max_rate;
+        this->byte_counter = init_byte_counter;
+        this->src_gpu_idx = gpu_idx;
+        if (this->src_gpu_idx < 0)
+            throw cRuntimeError("How is src_gpu_idx < 0");
+        this->send_timer = new cMessage("cc_send_timer");
+        this->send_timer->addPar("flow_id") = flow_id;
+        this->send_timer->addPar("gpu_idx") = gpu_idx;
+        this->send_timer->setKind(CC_SEND);
+        this->increase_timer = new cMessage("dcqcn_increase_timer");
+        this->increase_timer->addPar("flow_id") = flow_id;
+        this->increase_timer->addPar("gpu_idx") = gpu_idx;
+        this->increase_timer->setKind(DCQCN_INCREASE);
+        this->alpha_timer = new cMessage("dcqcn_alpha_timer");
+        this->alpha_timer->addPar("flow_id") = flow_id;
+        this->alpha_timer->addPar("gpu_idx") = gpu_idx;
+        this->alpha_timer->setKind(DCQCN_ALPHA);
+        this->increase_timer_gap = increase_timer_gap;
+        this->alpha_timer_gap = alpha_timer_gap;
+        this->BC = 0;
+        this->T = 0;
+        this->sender_previous_cnp_reaction_time = 0;
+        this->application_name = "";
+        this->application_full_path = "";
+    }
+
+    CCFlowInfo(unsigned long flow_id, double init_alpha, double init_g, double max_rate, unsigned long init_byte_counter,
+            double increase_timer_gap, double alpha_timer_gap, std::string application_name, std::string application_full_path,
+            int gpu_idx) {
+        this->flow_id = flow_id;
+        this->sender_previous_cnp_reaction_time = 0;
+        this->alpha = init_alpha;
+        this->g = init_g;
+        this->curr_rate = max_rate;
+        this->target_rate = max_rate;
+        this->max_rate = max_rate;
+        this->byte_counter = init_byte_counter;
+        this->src_gpu_idx = gpu_idx;
+        this->send_timer = new cMessage("cc_send_timer");
+        this->send_timer->addPar("flow_id") = flow_id;
+        this->send_timer->addPar("gpu_idx") = gpu_idx;
+        this->send_timer->setKind(CC_SEND);
+        this->increase_timer = new cMessage("dcqcn_increase_timer");
+        this->increase_timer->addPar("flow_id") = flow_id;
+        this->increase_timer->addPar("gpu_idx") = gpu_idx;
+        this->increase_timer->setKind(DCQCN_INCREASE);
+        this->alpha_timer = new cMessage("dcqcn_alpha_timer");
+        this->alpha_timer->addPar("flow_id") = flow_id;
+        this->alpha_timer->addPar("gpu_idx") = gpu_idx;
+        this->alpha_timer->setKind(DCQCN_ALPHA);
+        this->increase_timer_gap = increase_timer_gap;
+        this->alpha_timer_gap = alpha_timer_gap;
+        this->BC = 0;
+        this->T = 0;
+        this->sender_previous_cnp_reaction_time = 0;
+        this->application_name = application_name;
+        this->application_full_path = application_full_path;
+
+    };
+
+    // for swift
+
+    CCFlowInfo(unsigned long flow_id, double max_rate, std::string application_name,
+            std::string application_full_path,
+            int gpu_idx) {
+        this->flow_id = flow_id;
+        this->curr_rate = max_rate;
+        this->max_rate = max_rate;
+        this->src_gpu_idx = gpu_idx;
+        this->send_timer = new cMessage("cc_send_timer");
+        this->send_timer->addPar("flow_id") = flow_id;
+        this->send_timer->addPar("gpu_idx") = gpu_idx;
+        this->send_timer->setKind(CC_SEND);
+        this->application_name = application_name;
+        this->application_full_path = application_full_path;
+    };
+
+    void print_info() {
+        std::cout << "sender_previous_cnp_reaction_time: " << this->sender_previous_cnp_reaction_time <<
+                "curr_rate: " << this->curr_rate <<
+                "target_rate: " << this->target_rate <<
+                "max_rate: " << this->max_rate <<
+                "sender_previous_cnp_reaction_time: " << this->sender_previous_cnp_reaction_time << endl;
+    }
+};
+
+// Forward declarations:
+class EthernetSignal;
+
+/**
+ * Base class for Ethernet MAC implementations.
+ */
+class INET_API EtherMacBase : public MacProtocolBase
+{
+  public:
+        enum MacTransmitState {
+            TX_IDLE_STATE = 1,
+            WAIT_IFG_STATE,
+            SEND_IFG_STATE,
+            TRANSMITTING_STATE,
+            JAMMING_STATE,
+            BACKOFF_STATE,
+            PAUSE_STATE
+            //FIXME add TX_OFF_STATE
+        };
+
+        enum MacReceiveState {
+            RX_IDLE_STATE = 1,
+            RECEIVING_STATE,
+            RX_COLLISION_STATE,
+            RX_RECONNECT_STATE
+            //FIXME add RX_OFF_STATE
+        };
+
+  protected:
+    // Self-message kind values
+    enum SelfMsgKindValues {
+        ENDIFG = 100,
+        ENDRECEPTION,
+        ENDBACKOFF,
+        ENDTRANSMISSION,
+        ENDJAMMING,
+        ENDPAUSE
+    };
+
+    enum {
+        NUM_OF_ETHERDESCRS = 11
+    };
+
+    struct EtherDescr
+    {
+        double txrate;
+        double halfBitTime;    // transmission time of a half bit
+        // for half-duplex operation:
+        short int maxFramesInBurst;
+        B maxBytesInBurst;    // including IFG and preamble, etc.
+        B halfDuplexFrameMinBytes;    // minimal frame length in half-duplex mode; -1 means half duplex is not supported
+        B frameInBurstMinBytes;    // minimal frame length in burst mode, after first frame
+        double slotTime;    // slot time
+        double maxPropagationDelay;    // used for detecting longer cables than allowed
+    };
+
+    // MAC constants for bitrates and modes
+    static const EtherDescr etherDescrs[NUM_OF_ETHERDESCRS];
+    static const EtherDescr nullEtherDescr;
+
+    // configuration
+    const char *displayStringTextFormat = nullptr;
+    bool sendRawBytes = false;
+    const EtherDescr *curEtherDescr = nullptr;    // constants for the current Ethernet mode, e.g. txrate
+    bool connected = false;    // true if connected to a network, set automatically by exploring the network configuration
+    bool disabled = false;    // true if the MAC is disabled, defined by the user
+    bool promiscuous = false;    // if true, passes up all received frames
+    bool duplexMode = false;    // true if operating in full-duplex mode
+    bool frameBursting = false;    // frame bursting on/off (Gigabit Ethernet)
+
+    // gate pointers, etc.
+    cChannel *transmissionChannel = nullptr;    // transmission channel
+    cGate *physInGate = nullptr;    // pointer to the "phys$i" gate
+    cGate *physOutGate = nullptr;    // pointer to the "phys$o" gate
+
+    // state
+    bool channelsDiffer = false;    // true when tx and rx channels differ (only one of them exists, or 'datarate' or 'disable' parameters differ) (configuration error, or between changes of tx/rx channels)
+    MacTransmitState transmitState = static_cast<MacTransmitState>(-1);    // "transmit state" of the MAC
+    MacReceiveState receiveState = static_cast<MacReceiveState>(-1);    // "receive state" of the MAC
+    simtime_t lastTxFinishTime;    // time of finishing the last transmission
+    int pauseUnitsRequested = 0;    // requested pause duration, or zero -- examined at endTx
+
+    // self messages
+    cMessage *endTxMsg = nullptr, *endIFGMsg = nullptr, *endPauseMsg = nullptr;
+
+    // statistics
+    unsigned long numFramesSent = 0;
+    unsigned long numFramesReceivedOK = 0;
+    unsigned long numBytesSent = 0;    // includes Ethernet frame bytes with padding and FCS
+    unsigned long numBytesReceivedOK = 0;    // includes Ethernet frame bytes with padding and FCS
+    unsigned long numFramesFromHL = 0;    // packets received from higher layer (LLC or MacRelayUnit)
+    unsigned long numDroppedPkFromHLIfaceDown = 0;    // packets from higher layer dropped because interface down or not connected
+    unsigned long numDroppedIfaceDown = 0;    // packets from network layer dropped because interface down or not connected
+    unsigned long numDroppedBitError = 0;    // frames dropped because of bit errors
+    unsigned long numDroppedNotForUs = 0;    // frames dropped because destination address didn't match
+    unsigned long numFramesPassedToHL = 0;    // frames passed to higher layer
+    unsigned long numPauseFramesRcvd = 0;    // PAUSE frames received from network
+    unsigned long numPauseFramesSent = 0;    // PAUSE frames sent
+
+    static simsignal_t rxPkOkSignal;
+    static simsignal_t txPausePkUnitsSignal;
+    static simsignal_t rxPausePkUnitsSignal;
+
+    static simsignal_t transmissionStateChangedSignal;
+    static simsignal_t receptionStateChangedSignal;
+
+    static simsignal_t packetHopCountSignal;
+
+  public:
+    static const double SPEED_OF_LIGHT_IN_CABLE;
+
+  public:
+    EtherMacBase();
+    virtual ~EtherMacBase();
+
+    virtual MacAddress getMacAddress() { return interfaceEntry ? interfaceEntry->getMacAddress() : MacAddress::UNSPECIFIED_ADDRESS; }
+
+    double getTxRate() { return curEtherDescr->txrate; }
+    bool isActive() { return connected && !disabled; }
+
+    MacTransmitState getTransmitState(){ return transmitState; }
+    MacReceiveState getReceiveState(){ return receiveState; }
+
+    virtual void handleStartOperation(LifecycleOperation *operation) override;
+    virtual void handleStopOperation(LifecycleOperation *operation) override;
+    virtual void handleCrashOperation(LifecycleOperation *operation) override;
+    virtual void processAtHandleMessageFinished();
+
+    // per packet fabric delay
+    long double per_packet_fabric_delay_sum = 0;
+    unsigned long long per_packet_fabric_delay_num = 0;
+    virtual void calculate_fabric_delay(simtime_t time_sent_from_source_host);
+
+    /**
+     * Inserts padding in front of FCS and calculate FCS
+     */
+    void addPaddingAndSetFcs(Packet *packet, B requiredMinByteLength = MIN_ETHERNET_FRAME_BYTES) const;
+
+    virtual double get_link_util() {
+        double rate = transmissionChannel->getNominalDatarate();
+        return rate;
+    };
+
+  protected:
+    //  initialization
+    virtual void initialize(int stage) override;
+    virtual int numInitStages() const override { return NUM_INIT_STAGES; }
+    virtual void initializeFlags();
+    virtual void initializeQueue();
+    virtual void initializeStatistics();
+
+    // finish
+    virtual void finish() override;
+
+    /** Checks destination address and drops the frame when frame is not for us; returns true if frame is dropped */
+    virtual bool dropFrameNotForUs(Packet *packet, const Ptr<const EthernetMacHeader>& frame);
+
+    /**
+     * Calculates datarates, etc. Verifies the datarates on the incoming/outgoing channels,
+     * and throws error when they differ and the parameter errorWhenAsymmetric is true.
+     */
+    virtual void readChannelParameters(bool errorWhenAsymmetric);
+    virtual void printParameters();
+
+    // helpers
+    virtual void processConnectDisconnect();
+    virtual void encapsulate(Packet *packet);
+    virtual void decapsulate(Packet *packet);
+
+    /// Verify ethernet packet: check FCS and payload length
+    bool verifyCrcAndLength(Packet *packet);
+
+    // MacBase
+    virtual void configureInterfaceEntry() override;
+
+    // display
+    virtual void refreshDisplay() const override;
+
+    // model change related functions
+    virtual void receiveSignal(cComponent *src, simsignal_t signalId, cObject *obj, cObject *details) override;
+    virtual void refreshConnection();
+
+    void changeTransmissionState(MacTransmitState newState);
+    void changeReceptionState(MacReceiveState newState);
+
+    bool use_udp = false;
+//    bool use_host_assisted_routing = false;
+
+    // Rate control
+    enum RateControlType {dcqcn=1, swift, sharp};
+    int rate_control_type = dcqcn;
+
+    // maps flow id to the most recent CNP generation time for every receiver
+    std::map<std::tuple<int, unsigned long>, simtime_t> flow_id_to_receiver_cnp_generation_time_mapper;
+    std::map<std::tuple<int, unsigned long>, simtime_t> flow_id_to_sender_cnp_generation_time_mapper;
+    simtime_t cnp_generation_gap;
+    bool sender_cnp_gap_applied;
+    // maps flow id to the DCQCN flow info on the sender side
+    std::map<std::tuple<int, unsigned long>, CCFlowInfo*> flow_id_to_info_mapper;
+    double dcqcn_mtu = -1;
+    double dcqcn_F = -1;
+    double dcqcn_HI_factor = -1;
+    double dcqcn_AI_factor = -1;
+    double dcqcn_initial_rate_devider = -1; // rate becomes devided by this value
+    bool dcqcn_limit_max_rate = false;
+
+
+};
+
+} // namespace inet
+
+#endif // ifndef __INET_ETHERMACBASE_H
+
