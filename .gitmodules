@@ -1,0 +1,3 @@
+[submodule "Omnet_Sims/dc_simulations/simulations/sims/peel_workload_sample_bcast"]
+	path = Omnet_Sims/dc_simulations/simulations/sims/peel_workload_sample_bcast
+	url = https://github.com/foundational-networks/peel_workload_sample_bcast.git
