@@ -66,7 +66,7 @@ make
 To clone the repository, run the following script:
 
 ```
-git clone https://github.com/hopnets/practical_deflection.git
+git clone https://github.com/foundational-networks/PEEL.git
 ```
 
 ### Step 4: Building the project
@@ -74,13 +74,13 @@ git clone https://github.com/hopnets/practical_deflection.git
 We have provided a ```build.sh``` shell script to simplify this process. To build the project modules and download the distribution files, run the following scripts:
 
 ```
-cd practical_deflection/Omnet_Sims/
+cd PEEL/Omnet_Sims/
 bash build.sh
 ```
 
 ### Step 5: Downloading distribution files
 
-To download the distribution files, make sure that you are in the right directory ("practical_deflection/Omnet_Sims") and then run the following commands:
+To download the distribution files, make sure that you are in the right directory ("PEEL/Omnet_Sims") and then run the following commands:
 
 ```
 cd dc_simulations/simulations/sims
@@ -90,11 +90,11 @@ git submodule update
 
 ### Small-scale simulations: Extra step for evaluation in a short time
 
-Every scenario with [large-scale simulation](#step-6-running-the-large-scale-simulations-and-extracting-the-results) configurations takes days or even weeks to complete. Accordingly, we are providing a small-scale sample with 1Gbps links for those interested in evaluating the code in a short time. First, make sure that you are in the right directory ("practical_deflection/Omnet_Sims/dc_simulations/simulations/sims") and then use the following commands to extract the distribution files:
+Every scenario with [large-scale simulation](#step-6-running-the-large-scale-simulations-and-extracting-the-results) configurations takes days or even weeks to complete. Accordingly, we are providing a small-scale sample in which we run a single Broadcast collective with 8 MB messages among 64 nodes and compare the results of various techniques for those interested in evaluating the code in a short time. First, make sure that you are in the right directory ("PEEL/Omnet_Sims/dc_simulations/simulations/sims") and then use the following commands to extract the distribution files:
 
 ```
-bash extract_dist_files_LS_1Gbps.sh
-./run_1G.sh 
+bash extract_dist_files_LS_sample.sh
+./run_sample.sh 
 ```
 
 The commands above, download the distribution files for the small-scale simulations and simulate the following scenarios:
