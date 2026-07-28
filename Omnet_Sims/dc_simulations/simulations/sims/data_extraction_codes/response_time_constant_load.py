@@ -519,7 +519,8 @@ for category in CATEGORIES:
                             if len(background_fct_cdf_info) == 0:
                                 background_fct_cdf_info.append(0)
 
-                            print(file_name.replace("_",","))
+                            # print(file_name.replace("_",","))
+                            print(category)
 
                             # print("type, started, finished, %Flow Completion, mean, p10, p50, p90, p99, p99.9")
 
