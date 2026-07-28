@@ -29,7 +29,7 @@ LOOK_AHEAD_LIST = [0]
 
 VERBOSE = False
 
-CATEGORIES = ["ring_bcast", "tree_bcast", "ace_bcast", "ace_bcast_orca", "ace_bcast_elmo", "ace_bcast_peel"]
+CATEGORIES = ["ring_bcast", "tree_bcast", "mcast_optimal_bcast", "mcast_bcast_orca", "mcast_bcast_elmo", "mcast_bcast_peel"]
 
 
 '''
@@ -44,7 +44,7 @@ REP_NUM = 1
 MSS = 1440
 K = 8
 BASE_SPINE_NUM = 16
-BASE_AGG_NUM = 48
+BASE_AGG_NUM = 32
 SERVERS_UNDER_EACH_RACK = 2
 NUM_BURSTY_APPS = 0
 BASE_NUM_BACKGROUND_CONNECTIONS_TO_OTHER_SERVERS = 0
