@@ -85,7 +85,7 @@ To download the distribution files, make sure that you are in the right director
 ```
 cd dc_simulations/simulations/sims
 git submodule init
-git submodule update
+git submodule update --init --remote --recursive
 ```
 
 ### Small-scale simulations: Extra step for evaluation in a short time
