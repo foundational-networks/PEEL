@@ -118,22 +118,17 @@ The output should look similar to the following:
 ring_bcast
 Mean CCT (s): 0.00140
 
-
 tree_bcast
 Mean CCT (s): 0.00476
-
 
 mcast_optimal_bcast
 Mean CCT (s): 0.00017
 
-
 mcast_bcast_orca
 Mean CCT (s): 0.00080
 
-
 mcast_bcast_elmo
 Mean CCT (s): 0.00072
-
 
 mcast_bcast_peel
 Mean CCT (s): 0.00027
