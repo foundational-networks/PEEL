@@ -19,5 +19,6 @@ src/dc_simulations
 src/dc_simulations_dbg
 perf*
 flow_info/
+simulations/sims/logs/
 #simulations/Two_Layer_Leaf_Spine/MAC_Table_Data/*.txt
 #simulations/Two_Layer_Leaf_Spine/distributions/*.txt
