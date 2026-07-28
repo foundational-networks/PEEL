@@ -40,7 +40,7 @@ echo -e "Running Optimal"
 opp_runall -j50 ../../src/dc_simulations -m -u Cmdenv -c optimal -n ..:../../src:../../../inet/src:../../../inet/examples:../../../inet/tutorials:../../../inet/showcases --image-path=../../../inet/images -l ../../../inet/src/INET omnetpp_bcast_sample.ini
 do_extract mcast_optimal_bcast
 mkdir logs/mcast_optimal_sample
-cp results/*.out logs/optimal_sample/
+cp results/*.out logs/mcast_optimal_sample/
 
 
 
