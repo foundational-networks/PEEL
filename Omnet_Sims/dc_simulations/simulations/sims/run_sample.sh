@@ -38,8 +38,8 @@ cp results/*.out logs/tree_bcast_sample/
 echo "\n\n-------------------------------------------"
 echo "Running Optimal"
 opp_runall -j50 ../../src/dc_simulations -m -u Cmdenv -c optimal -n ..:../../src:../../../inet/src:../../../inet/examples:../../../inet/tutorials:../../../inet/showcases --image-path=../../../inet/images -l ../../../inet/src/INET omnetpp_bcast_sample.ini
-do_extract ace_bcast
-mkdir logs/optimal_sample
+do_extract mcast_optimal_bcast
+mkdir logs/mcast_optimal_sample
 cp results/*.out logs/optimal_sample/
 
 
@@ -48,7 +48,7 @@ cp results/*.out logs/optimal_sample/
 echo "\n\n-------------------------------------------"
 echo "Running Orca"
 opp_runall -j50 ../../src/dc_simulations -m -u Cmdenv -c orca -n ..:../../src:../../../inet/src:../../../inet/examples:../../../inet/tutorials:../../../inet/showcases --image-path=../../../inet/images -l ../../../inet/src/INET omnetpp_bcast_sample.ini
-do_extract ace_bcast_orca
+do_extract mcast_bcast_orca
 mkdir logs/orca_sample
 cp results/*.out logs/orca_sample/
 
@@ -58,7 +58,7 @@ cp results/*.out logs/orca_sample/
 echo "\n\n-------------------------------------------"
 echo "Running Elmo"
 opp_runall -j50 ../../src/dc_simulations -m -u Cmdenv -c elmo -n ..:../../src:../../../inet/src:../../../inet/examples:../../../inet/tutorials:../../../inet/showcases --image-path=../../../inet/images -l ../../../inet/src/INET omnetpp_bcast_sample.ini
-do_extract ace_bcast_elmo
+do_extract mcast_bcast_elmo
 mkdir logs/elmo_sample
 cp results/*.out logs/elmo_sample/
 
@@ -68,6 +68,6 @@ cp results/*.out logs/elmo_sample/
 echo "\n\n-------------------------------------------"
 echo "Running Peel"
 opp_runall -j50 ../../src/dc_simulations -m -u Cmdenv -c peel -n ..:../../src:../../../inet/src:../../../inet/examples:../../../inet/tutorials:../../../inet/showcases --image-path=../../../inet/images -l ../../../inet/src/INET omnetpp_bcast_sample.ini
-do_extract ace_bcast_peel
+do_extract mcast_bcast_peel
 mkdir logs/peel_sample
 cp results/*.out logs/peel_sample/

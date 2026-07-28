@@ -273,7 +273,7 @@ for category in CATEGORIES:
                                                 query = queries_temp[query_id]
                                                 num_flows_per_query = int(row[k+1])
                                                 if ("optireduce" in category):
-                                                    if ("ace" in category):
+                                                    if ("mcast" in category):
                                                         # In reduce phase, every node records scale-1 and then broadcasts to all hosts/not nodes
                                                         target_num_flows = (num_flows_per_query - 1) + (int(num_flows_per_query/ml_num_gpus) - 1)  # reduce all nodes + broadcast to all hosts
                                                         num_flows_per_query = target_num_flows * ml_query_scale   # repeated by all nodes
@@ -282,7 +282,7 @@ for category in CATEGORIES:
                                                         num_flows_per_query -= 1
                                                         num_flows_per_query *= 2
                                                         num_flows_per_query *= ml_query_scale
-                                                elif 'ace' in category:
+                                                elif 'mcast' in category:
                                                     num_flows_per_query /= ml_num_gpus
                                                     num_flows_per_query = int(num_flows_per_query)
                                                     # print(num_flows_per_query)
