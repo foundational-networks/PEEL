@@ -94,7 +94,10 @@ Every scenario with [large-scale simulation](#step-6-running-the-large-scale-sim
 
 ```
 bash extract_dist_files_sample.sh
-./run_sample.sh 
+./run_sample.sh
+cp data_extraction_codes/* extracted_results/
+cd extracted_results
+./print_results_sample.sh
 ```
 
 The commands above, download the distribution files for the small-scale simulations and simulate the following scenarios:
