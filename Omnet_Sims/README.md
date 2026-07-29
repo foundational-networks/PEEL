@@ -139,71 +139,25 @@ The results above show that PEEL achieves performance closest to the optimal mul
 
 ### Step 6: Running the large-scale simulations and extracting the results
 
-The config files for large-scale simulations can be used for evaluating Simple Deflection, quantile-based Preemptive Deflection, distribution-based Preemptive Deflection, Vertigo, DIBS, and ECMP while using TCP, DCTCP, Swift, and Bolt as the transport protocol. To run the large-scale simulations, first, make sure that you are in the right directory ("practical_deflection/Omnet_Sims/dc_simulations/simulations/sims") and then use the following commands to download the distribution files:
+The config files for large-scale simulations can be used for evaluating various collective operations and algorithms. To run the large-scale simulations under distinct collective algorithms for a specific collective operation, first make sure that you are in the right directory (```PEEL/Omnet_Sims/dc_simulations/simulations/sims```) and then use the following commands to download the distribution files, runs the simulations, and extract the results:
 
 ```
-bash extract_dist_files_LS.sh
+bash $DIST_DOWNLOWDER.sh
+./$EXPERIMENT_RUN_FILE.sh
+cp data_extraction_codes/* extracted_results/
+cd extracted_results
+./$EXPERIMENT_PRINT_FILE.sh
 ```
 
-After the distribution files are extracted, run the following commands based on the transport protocol for which you want to run your simulations:
+The table below summarizes the appropriate ```$DIST_DOWNLOWDER```, ```$EXPERIMENT_RUN_FILE```, and ```$EXPERIMENT_PRINT_FILE``` for distinct experiments:
 
-**TCP:**
+Experiment | $DIST_DOWNLOWDER | $EXPERIMENT_RUN_FILE | $EXPERIMENT_PRINT_FILE
+--- | --- | ---  | --- 
+Broadcast operations in leaf-spine | extract_dist_files_ls_bcast_dfsize_50 | run_bcast_ls_dfsize_50 | print_results_ls_bcast_dfsize_50
+Broadcast operations in 8-ary fat-tree | extract_dist_files_ft_bcast_dfsize_50 | run_bcast_ft_dfsize_50 | print_results_ft_bcast_dfsize_50
+All-Gather operations in leaf-spine | extract_dist_files_ls_allgather_allreduce_dfsize | run_allgather_ls_dfsize | print_results_ls_allgather_dfsize
+All-Gather operations in 8-ary fat-tree | extract_dist_files_ft_allgather_allreduce_dfsize | run_allgather_ft_dfsize | print_results_ft_allgather_dfsize
+All-Reduce operations in leaf-spine | extract_dist_files_ls_allgather_allreduce_dfsize | run_allreduce_ls_dfsize | print_results_ls_allreduce_dfsize
 
-```
-./run_50_bg_dqps_tcp.sh
-```
 
-**DCTCP:**
-
-```
-./run_50_bg_dqps_dctcp.sh
-```
-
-**Swift:**
-
-```
-./run_50_bg_dqps_swift.sh
-```
-
-**Bolt:**
-
-```
-./run_50_bg_dqps_bolt.sh
-```
-
-The commands above run each technique under 55%, 65%, 75%, 85%, and 95% load. After the simulations are over, our bash script automatically runs the Python code, prints the results, plots the figures, and saves them in the ./figs directory. Every scenario is expected to take less than 3 days. Accordingly, it would take less than 18 days for the simulations related to each transport protocol to be finished. We refer you to the **small-scale simulations** section if you would like to see some results in a shorter time.
-
-### Run large-scale simulations under other scenarios [Optional]
-
-If you want to run Simple Deflection, quantile-based Preemptive Deflection, distribution-based Preemptive Deflection, Vertigo, DIBS, ECMP, and AIFO under other scenarios, make sure that you are in the right directory ("practical_deflection/Omnet_Sims/dc_simulations/simulations/sims") and extract the distribution files depending on the simulations you want to run (**Make sure to execute only one of these commands as running both of them will overwrite some distribution files and you will face errors while running simulations**):
-
-```
-bash extract_dist_files_LS.sh # Run this if you want to run leaf-spine simulations.
-```
-```
-bash extract_dist_files_FatTree.sh # Run this if you want to run fat-tree simulations.
-```
-
-After the distribution files are extracted, you can use the provided bash scripts to run the large-scale simulations for different incast arrival rates (dqps), flow sizes, and scales. Additionally, you can run the simulations for 100 Gbps link rates, fat-tree topology, and component analysis. The list of the provided bash scripts is as below:
-
-* **Different arrival rates with 25%, 50%, and 75% background load and 10/40 Gbps links**
-  * run_25_bg_dqps.sh (uses ```omnetpp_25_bg_dqps.ini```)
-  * run_50_bg_dqps.sh (uses ```omnetpp_50_bg_dqps.ini```)
-  * run_75_bg_dqps.sh (uses ```omnetpp_75_bg_dqps.ini```)
-* **Different scales with 50% background load**
-  * run_50_bg_dscale.sh (uses ```omnetpp_50_bg_dscale.ini```)
-* **Different flow sizes with 50% background load**
-  * run_50_bg_dfsize.sh (uses ```omnetpp_50_bg_dfsize.ini```)
-* **Different arrival rates with 25%, 50%, and 75% background load and 100 Gbps links**
-  * run_25_bg_dqps_100gbps.sh (uses ```omnetpp_25_bg_dqps_100gbps.ini```)
-  * run_50_bg_dqps_100gbps.sh (uses ```omnetpp_50_bg_dqps_100gbps.ini```)
-  * run_75_bg_dqps_100gbps.sh (uses ```omnetpp_75_bg_dqps_100gbps.ini```)
-* **Fat-tree topology under different incast query arrival rates and 50% background load**
-  * run_fattree.sh (uses ```omnetpp_fattree.ini```)
-* **Preemptive Deflection parameter analysis**
-  * run_50_bg_param_study.sh (uses ```omnetpp_50_bg_param_study.ini```)
-* **Preemptive Deflection under various queue occupancy update frequencies**
-  * run_50_bg_update_freq.sh (uses ```omnetpp_50_bg_dupdate_freq.ini```)
-* **Probabilistic Preemptive Deflection**
-  * run_50_bg_dqps_probpd.sh (uses ```omnetpp_50_bg_dqps.ini```)
-
+The commands above run each experiment and store the results in ```PEEL/Omnet_Sims/dc_simulations/simulations/sims/extracted_results/archive```. Simulating most algorithms is expected to take less than 4 days. Howerver, simulating a collective operation with various algorithms would require weeks. We refer you to the **small-scale simulations** section if you would like to see some results in a short time.
