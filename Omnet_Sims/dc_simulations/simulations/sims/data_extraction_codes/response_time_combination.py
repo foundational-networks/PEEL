@@ -74,7 +74,7 @@ for category in CATEGORIES:
         SUB_FLOW_NUMS = [0]
 
     USING_ACE = False
-    if ("ace" in category):
+    if ("mcast" in category):
         USING_ACE = True
         
     for ml_query_inter_arrival_mult in ML_QUERY_INTER_MULT_LIST:
@@ -627,82 +627,83 @@ for category in CATEGORIES:
                                 if len(background_fct_cdf_info) == 0:
                                     background_fct_cdf_info.append(0)
 
-                                print(file_name.replace("_",","))
+                                # print(file_name.replace("_",","))
+                                print(category)
 
-                                print("type, started, finished, %Flow Completion, mean, p10, p50, p90, p99, p99.9")
+                                # print("type, started, finished, %Flow Completion, mean, p10, p50, p90, p99, p99.9")
 
-                                try:
-                                    print('all, {}, {}, {}, {}, {}, {}, {}, {}, {}\n \
-                                        mice of size, {}, {}, {}, {}, {}, {}, {}, {}, {}\ncat of size, {}, {}, {}, {}, {}, {}, {}, {}, {}\nelephant of size, {}, {}, {}, {}, {}, {}, {}, {}, {}\n bursty,{}, {}, {}, {}, {}, {}, {}, {}, {}\n ml,{}, {}, {}, {}, {}, {}, {}, {}, {}\n background,{}, {}, {}, {}, {}, {}, {}, {}, {}'.format(
-                                            num_all_flows_started / REP_NUM,
-                                            num_all_flows_ended / REP_NUM,
-                                            num_all_flows_ended / num_all_flows_started * 100,
-                                            np.mean(fct_cdf_info),
-                                            np.percentile(fct_cdf_info, 10),
-                                            np.percentile(fct_cdf_info, 50),
-                                            np.percentile(fct_cdf_info, 90),
-                                            np.percentile(fct_cdf_info, 99),
-                                            np.percentile(fct_cdf_info, 99.9),
-                                            num_all_flows_started / REP_NUM,
-                                            num_all_flows_ended / REP_NUM,
-                                            num_all_flows_ended / num_all_flows_started * 100,
-                                            num_mice_flows_started / REP_NUM,
-                                            num_mice_flows_ended / REP_NUM,
-                                            percentage_mice_flows_finished / REP_NUM,
-                                            np.mean(mice_fct_cdf_info),
-                                            np.percentile(mice_fct_cdf_info, 10),
-                                            np.percentile(mice_fct_cdf_info, 50),
-                                            np.percentile(mice_fct_cdf_info, 90),
-                                            np.percentile(mice_fct_cdf_info, 99),
-                                            np.percentile(mice_fct_cdf_info, 99.9),
-                                            num_cat_flows_started / REP_NUM,
-                                            num_cat_flows_ended / REP_NUM,
-                                            percentage_cat_flows_finished / REP_NUM,
-                                            np.mean(cat_fct_cdf_info),
-                                            np.percentile(cat_fct_cdf_info, 10),
-                                            np.percentile(cat_fct_cdf_info, 50),
-                                            np.percentile(cat_fct_cdf_info, 90),
-                                            np.percentile(cat_fct_cdf_info, 99),
-                                            np.percentile(cat_fct_cdf_info, 99.9),
-                                            num_elephant_flows_started / REP_NUM,
-                                            num_elephant_flows_ended / REP_NUM,
-                                            percentage_elephant_flows_finished / REP_NUM,
-                                            np.mean(elephant_fct_cdf_info),
-                                            np.percentile(elephant_fct_cdf_info, 10),
-                                            np.percentile(elephant_fct_cdf_info, 50),
-                                            np.percentile(elephant_fct_cdf_info, 90),
-                                            np.percentile(elephant_fct_cdf_info, 99),
-                                            np.percentile(elephant_fct_cdf_info, 99.9),
-                                            num_bursty_flows_started / REP_NUM,
-                                            num_bursty_flows_ended / REP_NUM,
-                                            percentage_bursty_flows_finished,
-                                            np.mean(bursty_fct_cdf_info),
-                                            np.percentile(bursty_fct_cdf_info, 10),
-                                            np.percentile(bursty_fct_cdf_info, 50),
-                                            np.percentile(bursty_fct_cdf_info, 90),
-                                            np.percentile(bursty_fct_cdf_info, 99),
-                                            np.percentile(bursty_fct_cdf_info, 99.9),
-                                            num_ml_flows_started / REP_NUM,
-                                            num_ml_flows_ended / REP_NUM,
-                                            percentage_ml_flows_finished,
-                                            np.mean(ml_fct_cdf_info),
-                                            np.percentile(ml_fct_cdf_info, 10),
-                                            np.percentile(ml_fct_cdf_info, 50),
-                                            np.percentile(ml_fct_cdf_info, 90),
-                                            np.percentile(ml_fct_cdf_info, 99),
-                                            np.percentile(ml_fct_cdf_info, 99.9),
-                                            num_background_flows_started/REP_NUM,
-                                            num_background_flows_ended/REP_NUM,
-                                            percentage_background_flows_finished,
-                                            np.mean(background_fct_cdf_info),
-                                            np.percentile(background_fct_cdf_info, 10),
-                                            np.percentile(background_fct_cdf_info, 50),
-                                            np.percentile(background_fct_cdf_info, 90),
-                                            np.percentile(background_fct_cdf_info, 99),
-                                            np.percentile(background_fct_cdf_info, 99.9)))
-                                except:
-                                    print('Info not found')
-                                    continue
+                                # try:
+                                #     print('all, {}, {}, {}, {}, {}, {}, {}, {}, {}\n \
+                                #         mice of size, {}, {}, {}, {}, {}, {}, {}, {}, {}\ncat of size, {}, {}, {}, {}, {}, {}, {}, {}, {}\nelephant of size, {}, {}, {}, {}, {}, {}, {}, {}, {}\n bursty,{}, {}, {}, {}, {}, {}, {}, {}, {}\n ml,{}, {}, {}, {}, {}, {}, {}, {}, {}\n background,{}, {}, {}, {}, {}, {}, {}, {}, {}'.format(
+                                #             num_all_flows_started / REP_NUM,
+                                #             num_all_flows_ended / REP_NUM,
+                                #             num_all_flows_ended / num_all_flows_started * 100,
+                                #             np.mean(fct_cdf_info),
+                                #             np.percentile(fct_cdf_info, 10),
+                                #             np.percentile(fct_cdf_info, 50),
+                                #             np.percentile(fct_cdf_info, 90),
+                                #             np.percentile(fct_cdf_info, 99),
+                                #             np.percentile(fct_cdf_info, 99.9),
+                                #             num_all_flows_started / REP_NUM,
+                                #             num_all_flows_ended / REP_NUM,
+                                #             num_all_flows_ended / num_all_flows_started * 100,
+                                #             num_mice_flows_started / REP_NUM,
+                                #             num_mice_flows_ended / REP_NUM,
+                                #             percentage_mice_flows_finished / REP_NUM,
+                                #             np.mean(mice_fct_cdf_info),
+                                #             np.percentile(mice_fct_cdf_info, 10),
+                                #             np.percentile(mice_fct_cdf_info, 50),
+                                #             np.percentile(mice_fct_cdf_info, 90),
+                                #             np.percentile(mice_fct_cdf_info, 99),
+                                #             np.percentile(mice_fct_cdf_info, 99.9),
+                                #             num_cat_flows_started / REP_NUM,
+                                #             num_cat_flows_ended / REP_NUM,
+                                #             percentage_cat_flows_finished / REP_NUM,
+                                #             np.mean(cat_fct_cdf_info),
+                                #             np.percentile(cat_fct_cdf_info, 10),
+                                #             np.percentile(cat_fct_cdf_info, 50),
+                                #             np.percentile(cat_fct_cdf_info, 90),
+                                #             np.percentile(cat_fct_cdf_info, 99),
+                                #             np.percentile(cat_fct_cdf_info, 99.9),
+                                #             num_elephant_flows_started / REP_NUM,
+                                #             num_elephant_flows_ended / REP_NUM,
+                                #             percentage_elephant_flows_finished / REP_NUM,
+                                #             np.mean(elephant_fct_cdf_info),
+                                #             np.percentile(elephant_fct_cdf_info, 10),
+                                #             np.percentile(elephant_fct_cdf_info, 50),
+                                #             np.percentile(elephant_fct_cdf_info, 90),
+                                #             np.percentile(elephant_fct_cdf_info, 99),
+                                #             np.percentile(elephant_fct_cdf_info, 99.9),
+                                #             num_bursty_flows_started / REP_NUM,
+                                #             num_bursty_flows_ended / REP_NUM,
+                                #             percentage_bursty_flows_finished,
+                                #             np.mean(bursty_fct_cdf_info),
+                                #             np.percentile(bursty_fct_cdf_info, 10),
+                                #             np.percentile(bursty_fct_cdf_info, 50),
+                                #             np.percentile(bursty_fct_cdf_info, 90),
+                                #             np.percentile(bursty_fct_cdf_info, 99),
+                                #             np.percentile(bursty_fct_cdf_info, 99.9),
+                                #             num_ml_flows_started / REP_NUM,
+                                #             num_ml_flows_ended / REP_NUM,
+                                #             percentage_ml_flows_finished,
+                                #             np.mean(ml_fct_cdf_info),
+                                #             np.percentile(ml_fct_cdf_info, 10),
+                                #             np.percentile(ml_fct_cdf_info, 50),
+                                #             np.percentile(ml_fct_cdf_info, 90),
+                                #             np.percentile(ml_fct_cdf_info, 99),
+                                #             np.percentile(ml_fct_cdf_info, 99.9),
+                                #             num_background_flows_started/REP_NUM,
+                                #             num_background_flows_ended/REP_NUM,
+                                #             percentage_background_flows_finished,
+                                #             np.mean(background_fct_cdf_info),
+                                #             np.percentile(background_fct_cdf_info, 10),
+                                #             np.percentile(background_fct_cdf_info, 50),
+                                #             np.percentile(background_fct_cdf_info, 90),
+                                #             np.percentile(background_fct_cdf_info, 99),
+                                #             np.percentile(background_fct_cdf_info, 99.9)))
+                                # except:
+                                #     print('Info not found')
+                                #     continue
 
                                 for query_pack in all_queries:
                                     qct_info = []
@@ -734,23 +735,23 @@ for category in CATEGORIES:
                                             if (len(detailed_qct_dict[collective_info]) > 0):
                                                 m_percentile_99 = np.percentile(detailed_qct_dict[collective_info], 99)
                                                 m_mean = np.mean(detailed_qct_dict[collective_info])
-                                            print('{} --> {}, {}, {}, {}, {}'
+                                            print('{} --> initiated: {}, completed: {}, mean CCT (s): {}, p99 CCT (s): {}'
                                                     .format(collective_info, 
                                                             detailed_query_counter_dict[collective_info], 
                                                             len(detailed_qct_dict[collective_info]),
-                                                            (len(detailed_qct_dict[collective_info]) / detailed_query_counter_dict[collective_info])*100,
                                                             m_mean,
                                                             m_percentile_99))
                                     
-                                    print('All Queries, {}, {}, {}, {}, {}, {}, {}, {}, {}'
-                                            .format(len(query_pack), len(qct_info),
-                                                    (len(qct_info) / len(query_pack))*100,
-                                                    np.mean(qct_info),
-                                                    np.percentile(qct_info, 10),
-                                                    np.percentile(qct_info, 50),
-                                                    np.percentile(qct_info, 90),
-                                                    np.percentile(qct_info, 99),
-                                                    np.percentile(qct_info, 99.9)))
+                                    # print('All Queries, {}, {}, {}, {}, {}, {}, {}, {}, {}'
+                                    #         .format(len(query_pack), len(qct_info),
+                                    #                 (len(qct_info) / len(query_pack))*100,
+                                    #                 np.mean(qct_info),
+                                    #                 np.percentile(qct_info, 10),
+                                    #                 np.percentile(qct_info, 50),
+                                    #                 np.percentile(qct_info, 90),
+                                    #                 np.percentile(qct_info, 99),
+                                    #                 np.percentile(qct_info, 99.9)))
+                                    print(f'All collectives --> mean CCT (s): {np.mean(qct_info)}, p99 CCT (s): {np.percentile(qct_info, 99)}')
 
                                     print('\n\n')
 

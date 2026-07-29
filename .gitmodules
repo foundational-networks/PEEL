@@ -34,3 +34,7 @@
 	path = Omnet_Sims/dc_simulations/simulations/sims/peel_workload_ft_allgather_allreduce_dfsize_50
 	url = https://github.com/foundational-networks/peel_workload_ft_allgather_allreduce_dfsize_50.git
 	branch = master
+[submodule "Omnet_Sims/dc_simulations/simulations/sims/peel_workload_ls_traffic_trace_50"]
+	path = Omnet_Sims/dc_simulations/simulations/sims/peel_workload_ls_traffic_trace_50
+	url = https://github.com/foundational-networks/peel_workload_ls_traffic_trace_50.git
+	branch = master
