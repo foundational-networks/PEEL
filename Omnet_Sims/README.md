@@ -158,6 +158,7 @@ Broadcast operations in 8-ary fat-tree | extract_dist_files_ft_bcast_dfsize_50 |
 All-Gather operations in leaf-spine | extract_dist_files_ls_allgather_allreduce_dfsize | run_allgather_ls_dfsize | print_results_ls_allgather_dfsize
 All-Gather operations in 8-ary fat-tree | extract_dist_files_ft_allgather_allreduce_dfsize | run_allgather_ft_dfsize | print_results_ft_allgather_dfsize
 All-Reduce operations in leaf-spine | extract_dist_files_ls_allgather_allreduce_dfsize | run_allreduce_ls_dfsize | print_results_ls_allreduce_dfsize
+Real-life datacenter trace experiment | extract_dist_files_ls_traffic_trace_50 | run_traffic_trace_ls_50 | print_results_ls_traffic_trace_50
 
 
-The commands above run each experiment and store the results in ```PEEL/Omnet_Sims/dc_simulations/simulations/sims/extracted_results/archive```. Simulating most algorithms is expected to take less than 4 days. Howerver, simulating a collective operation with various algorithms would require weeks. We refer you to the **small-scale simulations** section if you would like to see some results in a short time.
+The commands above run each experiment and store the results in ```PEEL/Omnet_Sims/dc_simulations/simulations/sims/extracted_results/archive```. Simulating most algorithms is expected to take less than 4 days. However, simulating a collective operation with various algorithms would require weeks. We refer you to the **small-scale simulations** section if you would like to see some results in a short time.
