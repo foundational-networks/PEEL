@@ -39,8 +39,8 @@ echo -e "\n\n-------------------------------------------"
 echo -e "Running Optimal"
 opp_runall -j50 ../../src/dc_simulations -m -u Cmdenv -c optimal -n ..:../../src:../../../inet/src:../../../inet/examples:../../../inet/tutorials:../../../inet/showcases --image-path=../../../inet/images -l ../../../inet/src/INET omnetpp_bcast_baseLS_50.ini
 do_extract mcast_optimal_bcast
-mkdir logs/mcast_optimal_ls_50
-cp results/*.out logs/mcast_optimal_ls_50/
+mkdir logs/mcast_optimal_bcast_ls_50
+cp results/*.out logs/mcast_optimal_bcast_ls_50/
 
 
 
@@ -49,8 +49,8 @@ echo -e "\n\n-------------------------------------------"
 echo -e "Running Orca"
 opp_runall -j50 ../../src/dc_simulations -m -u Cmdenv -c orca -n ..:../../src:../../../inet/src:../../../inet/examples:../../../inet/tutorials:../../../inet/showcases --image-path=../../../inet/images -l ../../../inet/src/INET omnetpp_bcast_baseLS_50.ini
 do_extract mcast_bcast_orca
-mkdir logs/orca_ls_50
-cp results/*.out logs/orca_ls_50/
+mkdir logs/orca_bcast_ls_50
+cp results/*.out logs/orca_bcast_ls_50/
 
 
 
@@ -59,8 +59,8 @@ echo -e "\n\n-------------------------------------------"
 echo -e "Running Elmo"
 opp_runall -j50 ../../src/dc_simulations -m -u Cmdenv -c elmo -n ..:../../src:../../../inet/src:../../../inet/examples:../../../inet/tutorials:../../../inet/showcases --image-path=../../../inet/images -l ../../../inet/src/INET omnetpp_bcast_baseLS_50.ini
 do_extract mcast_bcast_elmo
-mkdir logs/elmo_ls_50
-cp results/*.out logs/elmo_ls_50/
+mkdir logs/elmo_bcast_ls_50
+cp results/*.out logs/elmo_bcast_ls_50/
 
 
 
@@ -69,5 +69,5 @@ echo -e "\n\n-------------------------------------------"
 echo -e "Running Peel"
 opp_runall -j50 ../../src/dc_simulations -m -u Cmdenv -c peel -n ..:../../src:../../../inet/src:../../../inet/examples:../../../inet/tutorials:../../../inet/showcases --image-path=../../../inet/images -l ../../../inet/src/INET omnetpp_bcast_baseLS_50.ini
 do_extract mcast_bcast_peel
-mkdir logs/peel_ls_50
-cp results/*.out logs/peel_ls_50/
+mkdir logs/peel_bcast_ls_50
+cp results/*.out logs/peel_bcast_ls_50/
