@@ -7,7 +7,7 @@ This repository provides the instructions and files required to run the simulati
 * [Step 3: Clone the repository](#step-3-cloning-the-repository) (~ 5 minutes)
 * [Step 4: Build the project](#step-4-building-the-project) (~ 20 minutes)
 * [Step 5: Downloading distribution files](#step-5-downloading-distribution-files) (~ 15 minutes)
-* [Step 6: Run the simulations and extract the results](#small-scale-simulations-extra-step-for-evaluation-in-a-short-time) (This step can take from a few hours to a few weeks depending on the simulations that you run)
+* [Step 6: Run the simulations and extract the results](#small-scale-simulations-extra-step-for-evaluation-in-a-short-time) (This step can take from a few minutes to a few weeks depending on the simulations that you run)
 
 ### Step 1: Installing dependencies
 
@@ -55,7 +55,7 @@ source ~/.bashrc
 ./configure WITH_QTENV=no WITH_OSG=no WITH_OSGEARTH=no
 ```
 
-In case, the configure command printed out that "omnetpp-5.6.2/bin" is not added to your path, close and re-open your terminal and run the configure command again. If you are not using GUI, reboot your system using ```sudo reboot```. Make sure you get the **"Your PATH contains /opt/omnetpp-5.6.2/bin. Good!"** message in the configuration process before moving forward.
+In case the configure command printed out that "omnetpp-5.6.2/bin" is not added to your path, close and re-open your terminal and run the configure command again. If you are not using GUI, reboot your system using ```sudo reboot```. Make sure you get the **"Your PATH contains /opt/omnetpp-5.6.2/bin. Good!"** message in the configuration process before moving forward.
 
 ```
 make
@@ -71,7 +71,7 @@ git clone https://github.com/foundational-networks/PEEL.git
 
 ### Step 4: Building the project
 
-We have provided a ```build.sh``` shell script to simplify this process. To build the project modules and download the distribution files, run the following scripts:
+We have provided a ```build.sh``` shell script to simplify this process. To build the project modules and download the distribution files, run the following script:
 
 ```
 cd PEEL/Omnet_Sims/
@@ -84,7 +84,6 @@ To download the distribution files, make sure that you are in the right director
 
 ```
 cd dc_simulations/simulations/sims
-git submodule init
 git submodule update --init --remote --recursive
 ```
 
@@ -100,7 +99,7 @@ cd extracted_results
 ./print_results_sample.sh
 ```
 
-The commands above download the distribution files for the sample simulations and simulate the following scenarios:
+The commands above download the distribution files for the sample simulations and simulate the following collective algorithms:
 
 * Ring
 * Binary Tree
@@ -139,7 +138,7 @@ The results above show that PEEL achieves performance closest to the optimal mul
 
 ### Step 6: Running the large-scale simulations and extracting the results
 
-The config files for large-scale simulations can be used for evaluating various collective operations and algorithms. To run the large-scale simulations under distinct collective algorithms for a specific collective operation, first make sure that you are in the right directory (```PEEL/Omnet_Sims/dc_simulations/simulations/sims```) and then use the following commands to download the distribution files, runs the simulations, and extract the results:
+The config files for large-scale simulations can be used for evaluating various collective operations and algorithms. To run the large-scale simulations under distinct collective algorithms for a specific collective operation, first make sure that you are in the right directory (```PEEL/Omnet_Sims/dc_simulations/simulations/sims```) and then use the following commands to download the distribution files, run the simulations, and extract the results:
 
 ```
 bash $DIST_DOWNLOWDER.sh
