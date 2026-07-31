@@ -1,6 +1,3 @@
-**Note:** For both the small-scale “Hello World” example and the complete large-scale simulations, follow Steps 1–5 to install the simulator and set up the experimental environment. After completing these steps, you can either run the [small-scale simulation commands](#small-scale-simulations-extra-step-for-evaluation-in-a-short-time) for quick testing or [execute the large-scale simulation files](#step-6-running-the-large-scale-simulations-and-extracting-the-results) for a comprehensive experimentation.
-
-
 # Omnet++ simulation files
 
 This repository provides the instructions and files required to run the simulations and extract the results. We use [Omnet++ simulator](https://omnetpp.org/) and INET framework to run the simulations. [Omnet++ manual](https://doc.omnetpp.org/omnetpp/manual/) and its examples are good references for an introduction to the simulator. We ran our simulations on Ubuntu machines (version: 18.04), so all the commands are for Ubuntu. To run the simulations, you should follow the following steps:
@@ -11,6 +8,8 @@ This repository provides the instructions and files required to run the simulati
 * [Step 4: Build the project](#step-4-building-the-project) (~ 20 minutes)
 * [Step 5: Downloading distribution files](#step-5-downloading-distribution-files) (~ 15 minutes)
 * [Step 6: Run the simulations and extract the results](#small-scale-simulations-extra-step-for-evaluation-in-a-short-time) (This step can take from a few minutes to a few weeks depending on the simulations that you run)
+
+**Note:** For both the small-scale “Hello World” example and the complete large-scale simulations, follow Steps 1–5 to install the simulator and set up the experimental environment. After completing these steps, you can either run the [small-scale simulation commands](#small-scale-simulations-extra-step-for-evaluation-in-a-short-time) for quick testing or [execute the large-scale simulation files](#step-6-running-the-large-scale-simulations-and-extracting-the-results) for a comprehensive experimentation.
 
 ### Step 1: Installing dependencies
 
