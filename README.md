@@ -14,7 +14,7 @@ cd PEEL
 git submodule update --init --remote --recursive
 ```
 
-
+You can now refer to the `README` file within each component (e.g., `Omnet_Sims`) for detailed instructions on setting up, running, and testing that component.
 
 ## Getting started instructions
 
