@@ -39,7 +39,7 @@ bash install_python.sh
     "eventlet==0.30.2"
 
 # The ryu controller will be able to be ran with the following commands, with our openflow rules.
-/opt/venvs/ryu39/bin/python /opt/venvs/ryu39/bin/ryu-manager --ofp-tcp-listen-port 6653 /opt/PEEL/Env_Setup/OpenFlow_Rules/leafspine.py
+/opt/venvs/ryu39/bin/python /opt/venvs/ryu39/bin/ryu-manager --ofp-tcp-listen-port 6653 /opt/PEEL/Env_Setup/OpenFlow_Rules/src/leafspine.py
 
 # optionally to configure it to run as a systemd service and start with the system.
 
@@ -52,7 +52,7 @@ After=network.target
 Type=simple
 #User=ryu
 WorkingDirectory=/opt/venvs/ryu39
-ExecStart=/opt/venvs/ryu39/bin/ryu-manager --ofp-tcp-listen-port 6653 /opt/PEEL/Env_Setup/OpenFlow_Rules/leafspine.py
+ExecStart=/opt/venvs/ryu39/bin/ryu-manager --ofp-tcp-listen-port 6653 /opt/PEEL/Env_Setup/OpenFlow_Rules/src/leafspine.py
 Restart=always
 RestartSec=5
 
