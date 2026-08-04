@@ -1,10 +1,7 @@
-1. install and compile gloo 
-refers to gloo_install.md
+1. install and compile Gloo 
+refers to gloo_install.md (allready added)
 
-2. run benchmark
-
-TBA
-
+2. run benchmark (still remaining)
 
 
 # Compiling and Running PEEL's Gloo Benchmark
