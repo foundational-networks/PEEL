@@ -2,12 +2,11 @@
 
 This repository provides the instructions and files required to run the simulations and extract the results. We use [Omnet++ simulator](https://omnetpp.org/) and INET framework to run the simulations. [Omnet++ manual](https://doc.omnetpp.org/omnetpp/manual/) and its examples are good references for an introduction to the simulator. We ran our simulations on Ubuntu machines (version: 18.04), so all the commands are for Ubuntu. To run the simulations, you should follow the following steps:
 
-* [Step 1: Install dependencies](#step-1-installing-dependencies) (~ 10 minutes)
-* [Step 2: Install Omnet++](#step-2-installing-omnet)  (~ 15 minutes)
+* [Step 1: Install dependencies](#step-1-installing-dependencies) (~ 5 minutes)
+* [Step 2: Install Omnet++](#step-2-installing-omnet)  (~ 5 minutes)
 * [Step 3: Clone the repository](#step-3-cloning-the-repository) (~ 5 minutes)
-* [Step 4: Build the project](#step-4-building-the-project) (~ 20 minutes)
-* [Step 5: Downloading distribution files](#step-5-downloading-distribution-files) (~ 15 minutes)
-* [Step 6: Run the simulations and extract the results](#small-scale-simulations-extra-step-for-evaluation-in-a-short-time) (This step can take from a few minutes to a few weeks depending on the simulations that you run)
+* [Step 4: Build the project](#step-4-building-the-project) (~ 5 minutes)
+* [Step 5: Run the simulations and extract the results](#small-scale-simulations-extra-step-for-evaluation-in-a-short-time) (This step can take from a few minutes to a few weeks depending on the simulations that you run)
 
 **Note:** For both the small-scale “Hello World” example and the complete large-scale simulations, follow Steps 1–5 to install the simulator and set up the experimental environment. After completing these steps, you can either run the [small-scale simulation commands](#small-scale-simulations-extra-step-for-evaluation-in-a-short-time) for quick testing or [execute the large-scale simulation files](#step-6-running-the-large-scale-simulations-and-extracting-the-results) for a comprehensive experimentation.
 
@@ -80,20 +79,12 @@ cd PEEL/Omnet_Sims/
 bash build.sh
 ```
 
-### Step 5: Downloading distribution files
-
-To download the distribution files, make sure that you are in the right directory ("PEEL/Omnet_Sims") and then run the following commands:
-
-```
-cd dc_simulations/simulations/sims
-git submodule update --init --remote --recursive
-```
-
 ### Small-scale simulations: Extra step for evaluation in a short time
 
 Every scenario with [large-scale simulation](#step-6-running-the-large-scale-simulations-and-extracting-the-results) configurations takes days or even weeks to complete. Accordingly, we are providing a small-scale sample in which we run a single Broadcast collective with 8 MB messages among 64 nodes and compare the results of various techniques for those interested in evaluating the code in a short time. First, make sure that you are in the right directory ("PEEL/Omnet_Sims/dc_simulations/simulations/sims") and then use the following commands to extract the distribution files, run the simulations, and extract the results:
 
 ```
+cd dc_simulations/simulations/sims
 bash extract_dist_files_sample.sh
 ./run_sample.sh
 cp data_extraction_codes/* extracted_results/
@@ -138,7 +129,7 @@ Mean CCT (s): 0.00027
 
 The results above show that PEEL achieves performance closest to the optimal multicast baseline while outperforming all other techniques.
 
-### Step 6: Running the large-scale simulations and extracting the results
+### Step 5: Running the large-scale simulations and extracting the results
 
 The config files for large-scale simulations can be used for evaluating various collective operations and algorithms. To run the large-scale simulations under distinct collective algorithms for a specific collective operation, first make sure that you are in the right directory (```PEEL/Omnet_Sims/dc_simulations/simulations/sims```) and then use the following commands to download the distribution files, run the simulations, extract the results, and plot the figures:
 
