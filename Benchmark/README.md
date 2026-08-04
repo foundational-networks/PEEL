@@ -15,12 +15,11 @@ We used **Ubuntu 22.04** for our experiments. Accordingly, the instructions belo
 
 To set up the Gloo benchmarks, follow these steps:
 
-* [Step 1: Clone the PEEL repository](#step-1-clone-the-peel-repository)
-* [Step 2: Install OpenSSL dependencies](#step-2-install-openssl-dependencies)
-* [Step 3: Install Google Test](#step-3-install-google-test)
-* [Step 4: Install Hiredis](#step-4-install-hiredis)
-* [Step 5: Install Open MPI](#step-5-install-open-mpi)
-* [Step 6: Compile the Gloo benchmarks](#step-6-compile-the-gloo-benchmarks)
+* [Step 1: Install OpenSSL dependencies](#step-1-install-openssl-dependencies)
+* [Step 2: Install Google Test](#step-2-install-google-test)
+* [Step 3: Install Hiredis](#step-3-install-hiredis)
+* [Step 4: Install Open MPI](#step-4-install-open-mpi)
+* [Step 5: Compile the Gloo benchmarks](#step-5-compile-the-gloo-benchmarks)
 
 The main software dependencies are:
 
@@ -32,91 +31,29 @@ The main software dependencies are:
 
 ---
 
-## Step 1: Clone the PEEL Repository
-
-Clone the PEEL repository:
-
-```bash
-git clone https://github.com/foundational-networks/PEEL.git
-```
-
-Enter the repository:
-
-```bash
-cd PEEL
-```
-
-Initialize all Git submodules:
-
-```bash
-git submodule update --init --recursive
-```
-
-Then enter the Gloo directory:
-
-```bash
-cd Benchmark/gloo/
-```
-
----
-
-## Step 2: Install OpenSSL Dependencies
+## Step 1: Install OpenSSL Dependencies
 
 The build environment requires both the system OpenSSL installation and a separate installation of **OpenSSL 1.1.1w**.
 
-### 2.1 Install OpenSSL 1.1.1w
+### 1.1 Install OpenSSL 1.1.1w
 
-OpenSSL 1.1.1w is installed under `/opt/openssl-1.1.1` so that it does not overwrite the system OpenSSL installation.
-
-Download and extract OpenSSL 1.1.1w:
+OpenSSL 1.1.1w is installed under `/opt/openssl-1.1.1` so that it does not overwrite the system OpenSSL installation. For installation, run the following commands:
 
 ```bash
 cd /opt/
 wget https://www.openssl.org/source/openssl-1.1.1w.tar.gz
 tar -xzf openssl-1.1.1w.tar.gz
 cd openssl-1.1.1w
-```
-
-Update the package index:
-
-```bash
 apt update
-```
-
-Install the zlib development package required for compiling OpenSSL:
-
-```bash
 sudo apt-get install zlib1g-dev
-```
-
-> **Note:** On Ubuntu/Debian, the package is called `zlib1g-dev`, not `libz-dev`.
-
-Configure OpenSSL to install under `/opt/openssl-1.1.1`:
-
-```bash
 ./config --prefix=/opt/openssl-1.1.1 --openssldir=/opt/openssl-1.1.1 shared zlib
-```
-
-Compile OpenSSL:
-
-```bash
 make -j$(nproc)
-```
-
-Install it:
-
-```bash
 sudo make install
-```
-
-Add the OpenSSL 1.1.1 library directory to `LD_LIBRARY_PATH`:
-
-```bash
 echo 'export LD_LIBRARY_PATH=/opt/openssl-1.1.1/lib:$LD_LIBRARY_PATH' >> ~/.bashrc
 source ~/.bashrc
 ```
 
-Verify the installation:
+You can then verify the installation by:
 
 ```bash
 /opt/openssl-1.1.1/bin/openssl version
