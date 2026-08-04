@@ -137,41 +137,24 @@ The output should contain the installed Hiredis libraries, such as `libhiredis.s
 
 ## Step 4: Install Open MPI
 
-Install Open MPI and its development libraries:
+Install Open MPI and its development libraries using the commands below:
 
 ```bash
 sudo apt install -y openmpi-bin libopenmpi-dev
-```
-
-Before compiling the Gloo benchmark, also install the Hiredis development package and `pkg-config`:
-
-```bash
 sudo apt install -y libhiredis-dev pkg-config
 ```
 
 ---
 
-## Step 6: Compile the Gloo Benchmarks
+## Step 5: Compile the Gloo Benchmarks
 
-> **Note:** These instructions are based on Gloo commit:
-> `661af9d17afbd6b71476097e79e0945d3db9286a`.
+**Note:** These instructions are based on Gloo commit: `661af9d17afbd6b71476097e79e0945d3db9286a`.
 
-Return to the Gloo directory in the PEEL repository. For example, if PEEL was cloned into your home directory:
-
-```bash
-cd ~/PEEL/Benchmark/gloo/
-```
-
-Create the benchmark build directory:
+Return to the Gloo directory in the PEEL repository (`PEEL/Benchmark/`). Then compile Gloo using the following commands:
 
 ```bash
 mkdir build_bench
 cd build_bench
-```
-
-Configure Gloo with benchmark and Redis support:
-
-```bash
 cmake .. \
   -DUSE_REDIS=ON \
   -DBUILD_BENCHMARK=ON \
@@ -179,13 +162,9 @@ cmake .. \
   -DHIREDIS_LIBRARIES=/usr/local/lib/libhiredis.so \
   -DCMAKE_EXE_LINKER_FLAGS="-L/usr/local/lib -Wl,-rpath,/usr/local/lib" \
   -DCMAKE_SHARED_LINKER_FLAGS="-L/usr/local/lib -Wl,-rpath,/usr/local/lib"
-```
-
-Compile Gloo:
-
-```bash
 make
 ```
+
 
 ### Using GCC 14
 
