@@ -202,7 +202,7 @@ def plot_metric(
             marker=markers[index % len(markers)],
             linewidth=2.0,
             markersize=6,
-            label=category
+            label=translated_category
         )
 
     ax.set_xticks(x)
