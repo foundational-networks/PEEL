@@ -150,7 +150,7 @@ sudo apt install -y libhiredis-dev pkg-config
 
 **Note:** These instructions are based on Gloo commit: `661af9d17afbd6b71476097e79e0945d3db9286a`.
 
-Return to the Gloo directory in the PEEL repository (`PEEL/Benchmark/`). Then compile Gloo using the following commands:
+Now, return to the Gloo directory in the PEEL repository (`PEEL/Benchmark/gloo`). Then compile Gloo using the following commands:
 
 ```bash
 mkdir build_bench
@@ -165,10 +165,7 @@ cmake .. \
 make
 ```
 
-
-### Using GCC 14
-
-If the machine uses GCC 14, explicitly specify the C and C++ compilers when running CMake by adding:
+**Note:** If the machine uses GCC 14, explicitly specify the C and C++ compilers when running CMake by adding:
 
 ```text
 -DCMAKE_CXX_COMPILER=g++-14 -DCMAKE_C_COMPILER=gcc-14
@@ -188,11 +185,6 @@ cmake .. \
   -DCMAKE_C_COMPILER=gcc-14
 ```
 
-Then compile:
-
-```bash
-make
-```
 
 ### Verify the Build
 
