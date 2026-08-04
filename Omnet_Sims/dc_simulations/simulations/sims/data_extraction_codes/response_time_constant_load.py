@@ -33,6 +33,7 @@ incast_flow_size = INCAST_FLOW_SIZE[0]
 incast_scale = NUM_REQUESTS_PER_BURST[0]
 
 for category in CATEGORIES:
+    print('---------------------------------------------')
     num_iterations = 0
 
     if ('chunk' not in category):

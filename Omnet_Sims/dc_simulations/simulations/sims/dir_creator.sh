@@ -1,5 +1,4 @@
 mkdir logs
-mkdir figs
 mkdir extracted_results
 
 sudo mkdir extracted_results/CWND
