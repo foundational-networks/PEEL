@@ -41,3 +41,4 @@
 [submodule "Benchmark/gloo"]
 	path = Benchmark/gloo
 	url = https://github.com/foundational-networks/gloo.git
+	branch = main
