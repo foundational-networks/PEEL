@@ -49,7 +49,7 @@ sudo mkdir extracted_results/SYN_SENT
 sudo mkdir extracted_results/SYN_SENT_IS_BURSTY
 sudo mkdir extracted_results/FIN_ACK_RCV
 sudo mkdir extracted_results/RECORDS
-sudo mkdir extracted_results/FIGS
+# sudo mkdir extracted_results/FIGS
 sudo mkdir extracted_results/CHUNKS_RCVD_LENGTH
 sudo mkdir extracted_results/CHUNKS_RCVD_TOTAL_LENGTH
 sudo mkdir extracted_results/V2_RCVD_SOONER
