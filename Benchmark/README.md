@@ -65,18 +65,14 @@ The output should report **OpenSSL 1.1.1w**, for example:
 OpenSSL 1.1.1w  11 Sep 2023
 ```
 
-### 2.2 Install and Verify the System OpenSSL Version
+### 1.2 Install and Verify the System OpenSSL Version
 
-Install the system OpenSSL development package:
+To install the system OpenSSL development package:
 
 ```bash
 sudo apt install libssl-dev
-```
-
-Verify the default OpenSSL installation:
-
-```bash
 openssl version
+
 ```
 
 On modern Ubuntu installations, the default OpenSSL version should be **3.x**, for example:
@@ -84,11 +80,6 @@ On modern Ubuntu installations, the default OpenSSL version should be **3.x**, f
 ```text
 OpenSSL 3.0.2 15 Mar 2022 (Library: OpenSSL 3.0.2 15 Mar 2022)
 ```
-
-At this point, the system should have both:
-
-* OpenSSL 3.x as the default system OpenSSL.
-* OpenSSL 1.1.1w installed separately under `/opt/openssl-1.1.1`.
 
 ---
 
