@@ -110,7 +110,7 @@ The commands above download the distribution files for the sample simulations an
 * Elmo
 * PEEL
 
-Because the sample experiment simulates only a single Broadcast operation, each scenario should complete in less than two minutes. After running the commands above, the Collective Completion Time (CCT) results for all evaluated techniques will be stored in: ```PEEL/Omnet_Sims/dc_simulations/simulations/sims/extracted_results/archive```.
+Because the sample experiment simulates only a single Broadcast operation, each scenario should complete in less than two minutes. After running the commands above, the Collective Completion Time (CCT) results for all evaluated techniques will be stored in: ```PEEL/Omnet_Sims/dc_simulations/simulations/sims/extracted_results/archive```. Also, the figures are plotted and stored in ```PEEL/Omnet_Sims/dc_simulations/simulations/sims/extracted_results/figs```.
 
 The output should look similar to the following:
 
@@ -140,7 +140,7 @@ The results above show that PEEL achieves performance closest to the optimal mul
 
 ### Step 6: Running the large-scale simulations and extracting the results
 
-The config files for large-scale simulations can be used for evaluating various collective operations and algorithms. To run the large-scale simulations under distinct collective algorithms for a specific collective operation, first make sure that you are in the right directory (```PEEL/Omnet_Sims/dc_simulations/simulations/sims```) and then use the following commands to download the distribution files, run the simulations, and extract the results:
+The config files for large-scale simulations can be used for evaluating various collective operations and algorithms. To run the large-scale simulations under distinct collective algorithms for a specific collective operation, first make sure that you are in the right directory (```PEEL/Omnet_Sims/dc_simulations/simulations/sims```) and then use the following commands to download the distribution files, run the simulations, extract the results, and plot the figures:
 
 ```
 bash $DIST_DOWNLOWDER.sh
@@ -162,4 +162,4 @@ All-Reduce operations in leaf-spine | extract_dist_files_ls_allgather_allreduce_
 Real-life datacenter trace experiment | extract_dist_files_ls_traffic_trace_50 | run_traffic_trace_ls_50 | print_results_ls_traffic_trace_50
 
 
-The commands above run each experiment and store the results in ```PEEL/Omnet_Sims/dc_simulations/simulations/sims/extracted_results/archive```. Simulating most algorithms is expected to take less than 4 days. However, simulating a collective operation with various algorithms would require weeks. We refer you to the **small-scale simulations** section if you would like to see some results in a short time.
+The commands above run each experiment and store the results in ```PEEL/Omnet_Sims/dc_simulations/simulations/sims/extracted_results/archive``` and figures in ```PEEL/Omnet_Sims/dc_simulations/simulations/sims/extracted_results/figs```. Simulating most algorithms is expected to take less than 4 days. However, simulating a collective operation with various algorithms would require weeks. We refer you to the **small-scale simulations** section if you would like to see some results in a short time.
