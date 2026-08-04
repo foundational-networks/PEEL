@@ -83,40 +83,21 @@ OpenSSL 3.0.2 15 Mar 2022 (Library: OpenSSL 3.0.2 15 Mar 2022)
 
 ---
 
-## Step 3: Install Google Test
+## Step 2: Install Google Test
 
-Install the packages required for compiling Google Test:
-
-```bash
-apt install -y build-essential cmake git
-```
-
-Clone Google Test version `v1.17.0`:
+To install the packages required for compiling Google Test:
 
 ```bash
+sudo apt install -y build-essential cmake git
 cd /opt
 git clone https://github.com/google/googletest.git -b v1.17.0
 cd googletest
-```
-
-Create a build directory and configure the project:
-
-```bash
 mkdir build
 cd build
 cmake ..
-```
-
-Compile Google Test:
-
-```bash
 make
-```
-
-Install it:
-
-```bash
 sudo make install
+
 ```
 
 Verify that the Google Test headers were installed successfully:
@@ -129,7 +110,7 @@ If the installation was successful, `gtest` should appear in the output.
 
 ---
 
-## Step 4: Install Hiredis
+## Step 3: Install Hiredis
 
 Download Hiredis version `v1.3.0`:
 
