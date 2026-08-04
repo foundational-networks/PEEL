@@ -7,7 +7,7 @@ TBA
 
 
 
-# Gloo Benchmark Setup
+# Compiling and Running PEEL's Gloo Benchmark
 
 This directory contains the instructions required to install the dependencies, compile Gloo, and build the Gloo benchmarks in which PEEL is integrated.
 
@@ -112,42 +112,22 @@ If the installation was successful, `gtest` should appear in the output.
 
 ## Step 3: Install Hiredis
 
-Download Hiredis version `v1.3.0`:
+To install Hiredis version `v1.3.0`:
 
 ```bash
 cd /opt
 wget https://github.com/redis/hiredis/archive/refs/tags/v1.3.0.tar.gz
 tar -zxvf v1.3.0.tar.gz
 cd hiredis-1.3.0
-```
-
-Make sure `binutils` is installed and up to date:
-
-```bash
-apt install -y binutils
-```
-
-Compile Hiredis:
-
-```bash
+sudo apt install -y binutils
 make
-```
-
-Install it:
-
-```bash
 sudo make install
 ```
 
-Refresh the shared-library cache:
+Refresh the shared library cache and verify the installation:
 
 ```bash
 sudo ldconfig
-```
-
-Verify the installation:
-
-```bash
 ls /usr/local/lib | grep hiredis
 ```
 
@@ -155,7 +135,7 @@ The output should contain the installed Hiredis libraries, such as `libhiredis.s
 
 ---
 
-## Step 5: Install Open MPI
+## Step 4: Install Open MPI
 
 Install Open MPI and its development libraries:
 
