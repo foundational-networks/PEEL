@@ -18,13 +18,6 @@ To set up the Gloo benchmarks, follow these steps:
 * [Step 4: Install Open MPI](#step-4-install-open-mpi)
 * [Step 5: Compile the Gloo benchmarks](#step-5-compile-the-gloo-benchmarks)
 
-The main software dependencies are:
-
-* [Google Test](https://github.com/google/googletest)
-* [Hiredis](https://github.com/redis/hiredis)
-* [Open MPI](https://www.open-mpi.org/)
-* **OpenSSL 3+**, provided by modern Ubuntu installations
-* **OpenSSL 1.1.1w**, installed separately for compatibility with Gloo/CMake
 
 ---
 
