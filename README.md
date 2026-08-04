@@ -4,6 +4,17 @@ This repository contains the artifacts for network simulations and hardware impl
 
 Please refer to the README file in the `Omnet_Sims/` directory for instructions on running the simulations and extracting the results. Additionally, the README file in the `FPGA/` directory provides instructions for ... TBD.
 
+## Cloning the repository and its submodules
+
+To work with any component of this repository, first clone the PEEL repository and initialize all of its submodules. On **Ubuntu-based systems**, run:
+
+```
+git clone https://github.com/foundational-networks/PEEL.git
+cd PEEL
+git submodule update --init --remote --recursive
+```
+
+
 
 ## Getting started instructions
 
