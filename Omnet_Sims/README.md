@@ -9,6 +9,8 @@ This repository provides the instructions and files required to run the simulati
 * [Step 5: Downloading distribution files](#step-5-downloading-distribution-files) (~ 15 minutes)
 * [Step 6: Run the simulations and extract the results](#small-scale-simulations-extra-step-for-evaluation-in-a-short-time) (This step can take from a few minutes to a few weeks depending on the simulations that you run)
 
+**Note:** For both the small-scale “Hello World” example and the complete large-scale simulations, follow Steps 1–5 to install the simulator and set up the experimental environment. After completing these steps, you can either run the [small-scale simulation commands](#small-scale-simulations-extra-step-for-evaluation-in-a-short-time) for quick testing or [execute the large-scale simulation files](#step-6-running-the-large-scale-simulations-and-extracting-the-results) for a comprehensive experimentation.
+
 ### Step 1: Installing dependencies
 
 To successfully install Omnet++ and run the simulations, execute the following commands:
