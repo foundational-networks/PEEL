@@ -10,6 +10,8 @@ This repository provides the instructions and files required to run the simulati
 
 **Note:** For both the small-scale “Hello World” example and the complete large-scale simulations, follow Steps 1–5 to install the simulator and set up the experimental environment. After completing these steps, you can either run the [small-scale simulation commands](#small-scale-simulations-extra-step-for-evaluation-in-a-short-time) for quick testing or [execute the large-scale simulation files](#step-6-running-the-large-scale-simulations-and-extracting-the-results) for a comprehensive experimentation.
 
+---
+
 ### Step 1: Installing dependencies
 
 To successfully install Omnet++ and run the simulations, execute the following commands:
@@ -33,6 +35,8 @@ sudo ln -s /usr/bin/python3 /usr/bin/python
 sudo apt install -y python3-numpy
 sudo apt-get install -y python3-matplotlib
 ```
+
+---
 
 ### Step 2: Installing Omnet++
 
@@ -62,6 +66,8 @@ In case the configure command printed out that "omnetpp-5.6.2/bin" is not added 
 make
 ```
 
+---
+
 ### Step 3: Cloning the repository
 
 To clone the repository, run the following script:
@@ -69,6 +75,8 @@ To clone the repository, run the following script:
 ```
 git clone https://github.com/foundational-networks/PEEL.git
 ```
+
+---
 
 ### Step 4: Building the project
 
@@ -78,6 +86,8 @@ We have provided a ```build.sh``` shell script to simplify this process. To buil
 cd PEEL/Omnet_Sims/
 bash build.sh
 ```
+
+---
 
 ### Small-scale simulations: Extra step for evaluation in a short time
 
@@ -128,6 +138,8 @@ Mean CCT (s): 0.00027
 ```
 
 The results above show that PEEL achieves performance closest to the optimal multicast baseline while outperforming all other techniques.
+
+---
 
 ### Step 5: Running the large-scale simulations and extracting the results
 
