@@ -1,116 +1,131 @@
 # PEEL topology: one directed adjacency per line
-# Every physical link appears twice so traversal works in both directions.
+# Physical mapping:
+#   10.169.155.11-26 -> switch_0
+#   10.169.157.11-26 -> switch_1
+#   10.169.156.11-26 -> switch_2
+#   switch_0/switch_1/switch_2 -> switch_3 (core)
+#
+# Each physical connection is listed in both directions.
+# The ordering of switch-originated lines defines zero-based local port indexes.
 
-# Block 1: hosts connected to switch_0
-10.169.157.11  switch_0
-10.169.157.12  switch_0
-10.169.157.13  switch_0
-10.169.157.14  switch_0
-10.169.157.15  switch_0
-10.169.157.16  switch_0
-10.169.157.17  switch_0
-10.169.157.18  switch_0
-10.169.157.19  switch_0
-10.169.157.20  switch_0
-10.169.157.21  switch_0
-10.169.157.22  switch_0
-10.169.157.23  switch_0
-10.169.157.24  switch_0
-10.169.157.25  switch_0
-10.169.157.26  switch_0
+# Host-to-switch reverse adjacencies for switch_0
+10.169.155.11  switch_0
+10.169.155.12  switch_0
+10.169.155.13  switch_0
+10.169.155.14  switch_0
+10.169.155.15  switch_0
+10.169.155.16  switch_0
+10.169.155.17  switch_0
+10.169.155.18  switch_0
+10.169.155.19  switch_0
+10.169.155.20  switch_0
+10.169.155.21  switch_0
+10.169.155.22  switch_0
+10.169.155.23  switch_0
+10.169.155.24  switch_0
+10.169.155.25  switch_0
+10.169.155.26  switch_0
 
-switch_0  10.169.157.11
-switch_0  10.169.157.12
-switch_0  10.169.157.13
-switch_0  10.169.157.14
-switch_0  10.169.157.15
-switch_0  10.169.157.16
-switch_0  10.169.157.17
-switch_0  10.169.157.18
-switch_0  10.169.157.19
-switch_0  10.169.157.20
-switch_0  10.169.157.21
-switch_0  10.169.157.22
-switch_0  10.169.157.23
-switch_0  10.169.157.24
-switch_0  10.169.157.25
-switch_0  10.169.157.26
-
+# switch_0 local ports 0-15: hosts .11 through .26
+switch_0  10.169.155.11
+switch_0  10.169.155.12
+switch_0  10.169.155.13
+switch_0  10.169.155.14
+switch_0  10.169.155.15
+switch_0  10.169.155.16
+switch_0  10.169.155.17
+switch_0  10.169.155.18
+switch_0  10.169.155.19
+switch_0  10.169.155.20
+switch_0  10.169.155.21
+switch_0  10.169.155.22
+switch_0  10.169.155.23
+switch_0  10.169.155.24
+switch_0  10.169.155.25
+switch_0  10.169.155.26
+# switch_0 local port 16: uplink to core
 switch_0  switch_3
-switch_3  switch_0
 
-# Block 2: hosts connected to switch_1
-10.169.156.11  switch_1
-10.169.156.12  switch_1
-10.169.156.13  switch_1
-10.169.156.14  switch_1
-10.169.156.15  switch_1
-10.169.156.16  switch_1
-10.169.156.17  switch_1
-10.169.156.18  switch_1
-10.169.156.19  switch_1
-10.169.156.20  switch_1
-10.169.156.21  switch_1
-10.169.156.22  switch_1
-10.169.156.23  switch_1
-10.169.156.24  switch_1
-10.169.156.25  switch_1
-10.169.156.26  switch_1
+# Host-to-switch reverse adjacencies for switch_1
+10.169.157.11  switch_1
+10.169.157.12  switch_1
+10.169.157.13  switch_1
+10.169.157.14  switch_1
+10.169.157.15  switch_1
+10.169.157.16  switch_1
+10.169.157.17  switch_1
+10.169.157.18  switch_1
+10.169.157.19  switch_1
+10.169.157.20  switch_1
+10.169.157.21  switch_1
+10.169.157.22  switch_1
+10.169.157.23  switch_1
+10.169.157.24  switch_1
+10.169.157.25  switch_1
+10.169.157.26  switch_1
 
-switch_1  10.169.156.11
-switch_1  10.169.156.12
-switch_1  10.169.156.13
-switch_1  10.169.156.14
-switch_1  10.169.156.15
-switch_1  10.169.156.16
-switch_1  10.169.156.17
-switch_1  10.169.156.18
-switch_1  10.169.156.19
-switch_1  10.169.156.20
-switch_1  10.169.156.21
-switch_1  10.169.156.22
-switch_1  10.169.156.23
-switch_1  10.169.156.24
-switch_1  10.169.156.25
-switch_1  10.169.156.26
-
+# switch_1 local ports 0-15: hosts .11 through .26
+switch_1  10.169.157.11
+switch_1  10.169.157.12
+switch_1  10.169.157.13
+switch_1  10.169.157.14
+switch_1  10.169.157.15
+switch_1  10.169.157.16
+switch_1  10.169.157.17
+switch_1  10.169.157.18
+switch_1  10.169.157.19
+switch_1  10.169.157.20
+switch_1  10.169.157.21
+switch_1  10.169.157.22
+switch_1  10.169.157.23
+switch_1  10.169.157.24
+switch_1  10.169.157.25
+switch_1  10.169.157.26
+# switch_1 local port 16: uplink to core
 switch_1  switch_3
-switch_3  switch_1
 
-# Block 3: hosts connected to switch_2
-10.169.155.11  switch_2
-10.169.155.12  switch_2
-10.169.155.13  switch_2
-10.169.155.14  switch_2
-10.169.155.15  switch_2
-10.169.155.16  switch_2
-10.169.155.17  switch_2
-10.169.155.18  switch_2
-10.169.155.19  switch_2
-10.169.155.20  switch_2
-10.169.155.21  switch_2
-10.169.155.22  switch_2
-10.169.155.23  switch_2
-10.169.155.24  switch_2
-10.169.155.25  switch_2
-10.169.155.26  switch_2
+# Host-to-switch reverse adjacencies for switch_2
+10.169.156.11  switch_2
+10.169.156.12  switch_2
+10.169.156.13  switch_2
+10.169.156.14  switch_2
+10.169.156.15  switch_2
+10.169.156.16  switch_2
+10.169.156.17  switch_2
+10.169.156.18  switch_2
+10.169.156.19  switch_2
+10.169.156.20  switch_2
+10.169.156.21  switch_2
+10.169.156.22  switch_2
+10.169.156.23  switch_2
+10.169.156.24  switch_2
+10.169.156.25  switch_2
+10.169.156.26  switch_2
 
-switch_2  10.169.155.11
-switch_2  10.169.155.12
-switch_2  10.169.155.13
-switch_2  10.169.155.14
-switch_2  10.169.155.15
-switch_2  10.169.155.16
-switch_2  10.169.155.17
-switch_2  10.169.155.18
-switch_2  10.169.155.19
-switch_2  10.169.155.20
-switch_2  10.169.155.21
-switch_2  10.169.155.22
-switch_2  10.169.155.23
-switch_2  10.169.155.24
-switch_2  10.169.155.25
-switch_2  10.169.155.26
-
+# switch_2 local ports 0-15: hosts .11 through .26
+switch_2  10.169.156.11
+switch_2  10.169.156.12
+switch_2  10.169.156.13
+switch_2  10.169.156.14
+switch_2  10.169.156.15
+switch_2  10.169.156.16
+switch_2  10.169.156.17
+switch_2  10.169.156.18
+switch_2  10.169.156.19
+switch_2  10.169.156.20
+switch_2  10.169.156.21
+switch_2  10.169.156.22
+switch_2  10.169.156.23
+switch_2  10.169.156.24
+switch_2  10.169.156.25
+switch_2  10.169.156.26
+# switch_2 local port 16: uplink to core
 switch_2  switch_3
+
+# Core switch local-port ordering:
+#   port 0 -> switch_0
+#   port 1 -> switch_1
+#   port 2 -> switch_2
+switch_3  switch_0
+switch_3  switch_1
 switch_3  switch_2
