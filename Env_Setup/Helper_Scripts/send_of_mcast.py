@@ -7,11 +7,12 @@ import argparse
 import time
 
 TEST_MACS = {
-    "all_network":        "20:20:20:00:00:00",
+    "106_107_all":        "b0:20:20:00:00:00",
     "106_port0":    "b0:a1:a0:12:34:56",
     "107_port0_to_port3":    "b0:a2:60:00:00:00",
     "106_all_ports":       "b0:a1:20:00:00:00",
     "107_port0_to_port1":      "b0:a2:80:00:00:00",
+    "105_all":        "20:00:00:00:00:00",
 }
 
 def main():
