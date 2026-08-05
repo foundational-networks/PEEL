@@ -13,7 +13,7 @@ OpenFlow is enabled on all switches.
 
 To load the provided PEEL configuration onto the SN2700 switch:
 
-1. Log into the switch management interface through the web UI.
+1. Log into the switch management interface through the web UI (i.e., the IP of the management interface).
 2. Navigate to **Setup → Configurations**.
 3. In the **Upload Configuration** tab, select **Upload local binary file**.
 4. Select the provided `src/peel` configuration file and upload it.
