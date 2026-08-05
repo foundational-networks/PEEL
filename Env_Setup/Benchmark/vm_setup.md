@@ -68,7 +68,9 @@ apt install -y \
     sudo \
     autoconf \
     net-tools \
-    tcpdump
+    tcpdump \
+	python3-pip
+pip3 install scapy
 ```
 
 ---
