@@ -1,54 +1,84 @@
-Our experiment topology requires a core switch (Nvidia Mellanox SN2700) and three physical nodes, each has PVE installed with 16 VMs configured.
+# PVE Open vSwitch and OpenFlow Setup
 
-In addition to openflow on the core switch, we still need openflow configured for each PVE's soft switch, which can be configured with the following steps:
+Our experimental topology consists of:
 
-Our environment has the following specs:
-PVE version: 9.1.1
-openvswitch(ovs-vsctl) version: 3.5.0
-openflow (ovs-ofctl): 3.5.0
+* One **NVIDIA Mellanox SN2700** core switch
+* Three **physical nodes**, each running Proxmox Virtual Environment (PVE)
+* **16 virtual machines (VMs)** configured on each PVE node
 
-# The first step would be install PVE on all three physical hosts with physical connection to the core switch.
-The version we use is PVE 9.1.1
-follow the official guide for a step by step instruction: https://www.proxmox.com/en/products/proxmox-virtual-environment/get-started
+In addition to enabling OpenFlow on the core switch, OpenFlow must also be configured on the software switch running on each PVE node.
 
+Our environment was configured and tested with the following versions:
 
-# On a fresh PVE installtion, connecto to it management IP using ssh
-# install required packages
+| Component                      | Version |
+| ------------------------------ | ------- |
+| PVE                            | 9.1.1   |
+| Open vSwitch (`ovs-vsctl`)     | 3.5.0   |
+| OpenFlow utility (`ovs-ofctl`) | 3.5.0   |
+
+---
+
+## Step 1: Install Proxmox VE
+
+Install **Proxmox VE 9.1.1** on all three physical hosts and connect each host to the core switch through its designated physical network interface.
+For detailed installation instructions, refer to the [official Proxmox VE installation guide](https://www.proxmox.com/en/products/proxmox-virtual-environment/get-started).
+After completing the PVE installation, connect to the management IP address of each host using SSH.
+
+---
+
+## Step 2: Install Open vSwitch
+
+To install Open vSwitch and start it, run the following commands:
+
+```bash
 apt update
 apt install openvswitch-switch
-
-# Enable and confirm the servie is running
 systemctl enable --now openvswitch-switch
+```
+
+You can use the following commands to verify things:
+
+```bash
+# Verify that the service is running
 systemctl status openvswitch-switch --no-pager
 
-# Verify the installed version
+# Verify the installed Open vSwitch version
 ovs-vsctl --version
 
-#sample output
-root@hydra:~# ovs-ofctl --version
-ovs-ofctl (Open vSwitch) 3.5.0
-OpenFlow versions 0x1:0x6
-
-# verify the ofctl version
+# Verify the installed `ovs-ofctl` version
 ovs-ofctl --version
 
-# sample output
+```
+
+Example output:
+
+```text
 root@hydra:~# ovs-ofctl --version
 ovs-ofctl (Open vSwitch) 3.5.0
 OpenFlow versions 0x1:0x6
-
-
-# 2. Config the OVS bridge for openflow
-
-# first backup the current Config
-cp /etc/network/interfaces /etc/network/interfaces.backup
-
-# edit the interface file with the following
-nano /etc/network/interfaces
-
-# The content 
 ```
+
+---
+
+## Step 3: Configure the Open vSwitch Bridge
+
+Before modifying the network configuration, create a backup of the existing PVE network configuration:
+
+```bash
+cp /etc/network/interfaces /etc/network/interfaces.backup
+```
+
+Edit the network interface configuration:
+
+```bash
+nano /etc/network/interfaces
+```
+
+And configure the Open vSwitch bridge as follows:
+
+```text
 iface nic4 inet manual
+
 auto br-ovs
 iface br-ovs inet manual
     ovs_type OVSBridge
@@ -73,25 +103,75 @@ iface mgmt144 inet static
     ovs_options tag=144
     ovs_mtu 9216
 ```
-> Note you will nee to replace 'nic4" with the actual nic number of the host, as well as replace the management interface mgmt144 with tthe correct settings and gateway or it will not be accessible.
-> we use mtu 9216 as the transport mtu, the upper layer, the core switch, will also need to have mtu set to 9216. The provided config already have this set, but it is recommended to double-check after import.
-> The controller address and port, for example 10.169.144.22:6653, will also needs to be updated to match the actual ryu controller, and make sure the network does not have firewall or vlan settings that block settings.
 
+> **Important:** The configuration above reflects our experimental environment and must be adapted to the target system before use.
+>
+> In particular:
+>
+> * Replace `nic4` with the physical NIC on the PVE host that is connected to the core switch.
+> * Replace the `mgmt144` interface configuration, IP address, subnet, and gateway with the appropriate management network settings for the target environment.
+> * Incorrect management network settings may cause the PVE host to become inaccessible over the network.
 
-# reload the config from console
+### MTU Configuration
+
+Our experimental network uses an MTU of `9216` bytes for the transport network. The corresponding interfaces on the core switch must also be configured with a compatible MTU.
+The provided core-switch configuration already includes this setting, but we recommend verifying the MTU after importing the switch configuration.
+
+### Ryu Controller Address
+
+The following line specifies the address of the Ryu OpenFlow controller:
+
+```text
+ovs_extra set-controller br-ovs tcp:10.169.144.22:6653
+```
+
+Replace `10.169.144.22:6653` with the IP address and port of the Ryu controller in the target environment.
+Make sure that routing, firewall rules, and VLAN configuration allow the PVE hosts to communicate with the Ryu controller on this address and port.
+
+### VLAN Configuration
+
+Our laboratory network requires experiment traffic to use **VLAN 144**, which is why the management interface contains:
+
+```text
+ovs_options tag=144
+```
+
+> **Note:** VLAN 144 is specific to our laboratory environment and is **not required by PEEL**. A different VLAN, or no VLAN tagging, can be used as long as the switches and Ryu controller can communicate correctly.
+
+---
+
+## Step 4: Apply the Network Configuration
+
+Reload the network configuration from the host console:
+
+```bash
 ifreload -a
+```
 
-# We commend reboot the host for a complete setup
+We recommend rebooting the PVE host after completing the configuration:
+
+```bash
 reboot
+```
 
-# after reconnecting verify the port is connected
+> **Important:** Because modifying `/etc/network/interfaces` can interrupt network connectivity, we recommend applying the configuration while console access to the physical host is available.
+
+After the host reboots, reconnect to it and verify the Open vSwitch configuration:
+
+```bash
 ovs-vsctl show
+```
 
-> Note the network config for VMs is only visible when the they are started.
-For now we can proceed with empty output
-for setting up VMs, refers to PEEL/Env_Setup/Benchmark/vm_setup.md
+Before the VMs are started, it is normal for VM-specific `tap` interfaces to be absent from this output.
+For instructions on creating and configuring the VMs, refer to:
 
-# sample output 
+```text
+PEEL/Env_Setup/vm_setup.md
+```
+
+After the VMs are configured and running, the output should look similar to:
+
+```text
 root@hydra:~# ovs-vsctl show
 c6e1984a-c628-4e73-b6b2-d98cae561d4d
     Bridge br-ovs
@@ -106,20 +186,37 @@ c6e1984a-c628-4e73-b6b2-d98cae561d4d
             Interface tap207i0
         Port tap223i0
             tag: 144
-...(more ports) 
+            Interface tap223i0
+        ...
+```
 
-> Note due to the restrictions of our lab network, our traffic are required to have vlan 144 tagged. This is not strictly needed for peel to run as long as the controller are accessible.
+The following field indicates that the Open vSwitch bridge is connected to the configured controller: `is_connected: true`
 
-# if theres any error, try to set the openflow version to 1.3 again with the following command
+---
+
+## Step 5: Troubleshoot the OpenFlow Connection
+
+If the OpenFlow controller is not connected correctly, first explicitly configure the bridge to use OpenFlow 1.3:
+
+```bash
 ovs-vsctl set bridge br-ovs protocols=OpenFlow13
+```
 
-# as well as the controller address again
+Then configure the controller address again:
+
+```bash
 ovs-vsctl set-controller br-ovs tcp:CONTROLLER_IP:6653
+```
 
-# check controller status
+Replace `CONTROLLER_IP` with the IP address of the Ryu controller. Check the controller status:
+
+```bash
 ovs-vsctl list Controller
+```
 
-# sample output
+Example output:
+
+```text
 _uuid               : cd34b7cf-b03b-4ee2-9ad4-3d274d848eaf
 connection_mode     : []
 controller_burst_limit: []
@@ -138,17 +235,35 @@ role                : other
 status              : {last_error="Connection refused", sec_since_connect="88327", sec_since_disconnect="88329", state=ACTIVE}
 target              : "tcp:10.169.144.22:6653"
 type                : []
+```
 
-> note the status: state=ACTIVE, this indicate the controller is working correctly and connected.
+The most useful field for determining the current connection state is: `is_connected : true`. The `status` field can also provide additional debugging information about the controller connection.
 
-# Use the followoing command to retain access when openflow controller is not is operational state
+---
+
+## Step 6: Configure Standalone Fail Mode
+
+To retain network connectivity when the OpenFlow controller is unavailable, configure the bridge to use `standalone` fail mode:
+
+```bash
 ovs-vsctl set-fail-mode br-ovs standalone
+```
 
+With this configuration, Open vSwitch can continue forwarding traffic using normal switching behavior when the controller is unavailable.
 
-# verify the state of openflow
+---
+
+## Step 7: Verify the OpenFlow Configuration
+
+Verify that the bridge is operating with OpenFlow 1.3:
+
+```bash
 ovs-ofctl -O OpenFlow13 show br-ovs
+```
 
-# Sample output
+Example output:
+
+```text
 root@hydra:~# ovs-ofctl -O OpenFlow13 show br-ovs
 OFPT_FEATURES_REPLY (OF1.3) (xid=0x2): dpid:0000f46b8c1335c5
 n_tables:254, n_buffers:0
@@ -180,6 +295,53 @@ OFPST_PORT_DESC reply (OF1.3) (xid=0x3):
      state:      LIVE
      current:    10GB-FD COPPER
      speed: 10000 Mbps now, 0 Mbps max
+```
 
-> Important: the dpid is needed for the ryu controller to match the switch, it needs to be replaced into the openflow rules "OFPT_FEATURES_REPLY (OF1.3) (xid=0x2): dpid:0000f46b8c1335c5"
-> important: the number before the (tapxxxix) is the openflow port number, it will change when a VM is rebooted, and the mapping in the script will needs to be updated. to reflect the corret port for that VM.
+### Datapath ID (DPID)
+
+The first line contains the OpenFlow datapath ID (DPID) of the switch:
+
+```text
+OFPT_FEATURES_REPLY (OF1.3) (xid=0x2): dpid:0000f46b8c1335c5
+```
+
+In this example, the DPID is:
+
+```text
+0000f46b8c1335c5
+```
+
+> **Important:** The Ryu controller uses the DPID to identify and match each OpenFlow switch. Update the DPID values in the PEEL OpenFlow rules to match the switches in the target environment.
+
+---
+
+## Step 8: Verify VM-to-OpenFlow Port Mapping
+
+The output of:
+
+```bash
+ovs-ofctl -O OpenFlow13 show br-ovs
+```
+
+also shows the OpenFlow port number assigned to each interface. For example:
+
+```text
+3(tap200i0)
+4(tap201i0)
+5(tap202i0)
+```
+
+Here:
+
+* `tap200i0` corresponds to OpenFlow port `3`
+* `tap201i0` corresponds to OpenFlow port `4`
+* `tap202i0` corresponds to OpenFlow port `5`
+
+> **Important:** OpenFlow port numbers assigned to VM `tap` interfaces may change when VMs are restarted. The VM-to-OpenFlow-port mapping used by the PEEL controller scripts must therefore be checked and updated whenever these port assignments change.
+
+Before running an experiment, verify both:
+
+1. The **DPID** of each PVE Open vSwitch bridge.
+2. The **OpenFlow port number** associated with each VM interface.
+
+These values must match the corresponding mappings in the PEEL Ryu controller configuration.
