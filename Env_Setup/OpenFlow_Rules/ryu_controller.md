@@ -145,9 +145,7 @@ active (running)
 
 ## Step 5: Configure `leafspine.py`
 
-Before running experiments, the switch DPIDs and OpenFlow port mappings in `leafspine.py` must be updated to match the actual experimental topology.
-
-The relevant file is:
+Before running experiments, the switch DPIDs and OpenFlow port mappings in `leafspine.py` must be updated to match the actual experimental topology. The relevant file is:
 
 ```text
 PEEL/Env_Setup/OpenFlow_Rules/src/leafspine.py
@@ -156,7 +154,6 @@ PEEL/Env_Setup/OpenFlow_Rules/src/leafspine.py
 ### Step 5.1: Identify the Switch DPIDs and OpenFlow Ports
 
 The Ryu controller identifies each OpenFlow switch using its **Datapath ID (DPID)**.
-
 Refer to the following setup instructions to determine the DPID and OpenFlow port numbers of each switch:
 
 * `pve_switch.md`: DPID and OpenFlow ports of each PVE Open vSwitch
@@ -219,9 +216,7 @@ SW107_HOST_PORTS = [
 ]
 ```
 
-Each PVE host supports up to **16 VMs** in the current controller script. Each position in the list corresponds to a specific VM, while the value stored at that position is the VM's OpenFlow port number.
-
-For example:
+Each PVE host supports up to **16 VMs** in the current controller script. Each position in the list corresponds to a specific VM, while the value stored at that position is the VM's OpenFlow port number. For example:
 
 ```python
 SW105_HOST_PORTS = [
@@ -270,14 +265,9 @@ CORE_LEAF_PORTS = [CORE_TO_105, CORE_TO_106, CORE_TO_107]
 ```
 
 Each value represents the OpenFlow port on the physical core switch that connects to the corresponding PVE host.
+For example, `CORE_TO_105 = 103` means that PVE host 105 is connected to OpenFlow port `103` on the core switch.
 
-For example:
 
-```python
-CORE_TO_105 = 103
-```
-
-means that PVE host 105 is connected to OpenFlow port `103` on the core switch.
 
 Update:
 
@@ -288,7 +278,6 @@ CORE_TO_107
 ```
 
 to match the actual physical/OpenFlow port mappings of the target topology.
-
 The order of:
 
 ```python
