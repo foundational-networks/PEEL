@@ -11,6 +11,8 @@ OpenFlow is enabled on all switches.
 
 ## Configure the NVIDIA Mellanox SN2700 Core Switch
 
+Our SN2700 switch is running ***Onyx X86_64 3.9.3202 2021-08-11 15:04:27 x86_64***
+
 To load the provided PEEL configuration onto the SN2700 switch:
 
 1. Log into the switch management interface through the web UI (i.e., the IP of the management interface).
