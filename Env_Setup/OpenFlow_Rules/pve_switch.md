@@ -89,7 +89,7 @@ ovs-vsctl show
 
 > Note the network config for VMs is only visible when the they are started.
 For now we can proceed with empty output
-for setting up VMs, refers to PEEL/Benchmark/vm_setup.md
+for setting up VMs, refers to PEEL/Env_Setup/Benchmark/vm_setup.md
 
 # sample output 
 root@hydra:~# ovs-vsctl show
