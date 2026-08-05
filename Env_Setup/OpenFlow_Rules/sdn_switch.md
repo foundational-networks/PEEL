@@ -26,3 +26,32 @@ To load the provided PEEL configuration onto the SN2700 switch:
 > Applying the configuration without adapting it to your environment may cause loss of network-based management access to the switch. We strongly recommend verifying the configuration and ensuring that an alternative management method, such as console access, is available before switching to it.
 
 
+## Find the dpid and openflow port
+#1. log in to ssh of the switch using its management interface ip
+
+#2. Examine the OpenFlow config
+switch-eth100a [standalone: master] > show openflow
+
+# sample output
+switch-eth100a [standalone: master] > show openflow
+OpenFlow Version: OpenFlow 1.3
+Datapath ID: 0000b8599f5c4400
+
+Controllers Information:
+  ----------------------------------------------------------------------------------------
+  Controller                State            Role       Changed (sec)  Last Error
+  ----------------------------------------------------------------------------------------
+  tcp:10.169.144.22:6653    ACTIVE           other      89071          N/A      
+
+
+Mapping of OpenFlow ports to their OpenFlow numbers:
+  -----------------------
+  Interface       OF-Port
+  -----------------------
+  Eth1/21         OF-73
+  Eth1/22         OF-75
+  Eth1/14         OF-103
+switch-eth100a [standalone: master] >
+
+
+# From above info, "0000b8599f5c4400" is the dpid, and "73/75/103" is the openflow ports needs to be recorded. we recommend take a note on the corresponding physical interface and the PVE hosts it connects to.

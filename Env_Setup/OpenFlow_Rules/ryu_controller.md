@@ -131,3 +131,62 @@ systemctl status ryu
 
 If the setup is successful, the service should be reported as `active (running)`.
 
+---
+
+## Step 5: Update the leafspine.py script with actual dpid and port amppings. 
+## 5.1 Find dpid
+Our script will match openflow switch by their dpid. 
+Please refer to pve_switch.md to find the dpid and openflow ports of the each PVE openswitch.
+Please refer to sdn_switch.md to find the dpid and the openflow ports of the core switch.
+
+## 5.2 map the dpid to the openflow rules leafspine.py
+From line 22 - 26 of the leafspine.py, you will find the following info:
+
+    # ---------- DPIDs ----------
+    DPID_CORE = int("0000b8599f5c4400", 16)
+    DPID_105  = int("0000f46b8c134345", 16)
+    DPID_106  = int("0000f46b8c132d65", 16)
+    DPID_107  = int("0000f46b8c1335c5", 16)
+
+Replace the dpid in the int function to match the actual dpid of the core switch and each pve hosts.
+
+# 5.3 map the openflow port for PVE hosts and VMs.
+fron line 57 - 72 of the leafspine.py, you will find the following:
+    SW105_HOST_PORTS = [
+        3, 4, None, None, None, None, None, None,
+        None, None, None, None, None, None, None, None,
+    ]
+
+    SW106_HOST_PORTS = [
+        3, 4, 5, 6, 7, 8, 9, 10,
+        None, None, None, None, None, None, None, None,
+    ]
+
+    SW107_HOST_PORTS = [
+        3, 4, 5, 6, 7, 8, 9, 10,
+        None, None, None, None, None, None, None, None,
+    ]
+
+Each PVe hosts has space of 16 vms in our current script, and their index is matched by the position in the list.
+For example, position 0 in arrary SW105_HOST_PORTS is "3", which means, the openflow port of the first VM on host 105 is "3". this needs to match the actual openflow port outputted by the pve openswitch. which we record earlier.
+> if a VM is not configured or not needed in the experiment, leave the corresponding index as "None"
+
+# 5.4 map the openflow port for the core switch.
+from line 74 - 81, you will find the following:
+
+    # ---------- Core/spine ports ----------
+    # logical core port 0 -> switch 105
+    # logical core port 1 -> switch 106
+    # logical core port 2 -> switch 107
+    CORE_TO_105 = 103
+    CORE_TO_106 = 73
+    CORE_TO_107 = 75
+    CORE_LEAF_PORTS = [CORE_TO_105, CORE_TO_106, CORE_TO_107]
+
+same as the PVE port, the list "CORE_LEAF_PORTS" contains the logical mapping of the actual physical hosts on core switch.
+
+
+# 5.5 apply the changes.
+make sure the dpid and port mappings are correct, then apply the changes by restarting the openflow Controller
+systemctl restart ryu.
+
