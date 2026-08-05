@@ -43,24 +43,13 @@ systemctl status redis-server
 
 # Step 2: Create the PEEL Topology File
 
-PEEL requires a topology file specified using:
-
-```text
---peel-topology-file
-```
-
+PEEL requires a topology file specified using `--peel-topology-file`.
 The topology file describes the physical graph connecting servers and switches.
-
 PEEL reads this adjacency-list representation, constructs a minimum spanning tree rooted at the sender rank, and partitions the tree into subtrees used for multicast forwarding.
 
 ## Topology File Format
 
-Each line contains two node identifiers separated by whitespace:
-
-```text
-NODE_A NODE_B
-```
-
+Each line contains two node identifiers separated by whitespace: `NODE_A NODE_B`.
 A node identifier can be either:
 
 * A dotted-decimal IP address representing a server/VM, such as `10.0.0.1`
@@ -96,13 +85,7 @@ switch_2
 ```
 
 in the expected topology order.
-
-A complete topology file for our testbed is provided at:
-
-```text
-/opt/PEEL/Benchmark/peel_topology.txt
-```
-
+A complete topology file for our testbed is provided at: `/opt/PEEL/Benchmark/peel_topology.txt`.
 You can either:
 
 1. Provide the absolute path to the topology file using `--peel-topology-file`, or
@@ -115,8 +98,6 @@ For additional implementation details, refer to the PEEL topology documentation 
 ```text
 https://github.com/foundational-networks/gloo/blob/peel_integration/gloo/transport/tcp/peel/README.md#topology-file
 ```
-
-Credit: Sana Mahmood.
 
 ---
 
@@ -143,8 +124,6 @@ A PEEL benchmark command has the following general form:
 
 The following sections describe each argument.
 
----
-
 ## `--redis-host`
 
 Example:
@@ -154,16 +133,8 @@ Example:
 ```
 
 Specifies the IP address of the Redis server used for rendezvous.
+Replace `10.169.144.14` with the actual Redis server address if necessary.
 
-Replace:
-
-```text
-10.169.144.14
-```
-
-with the actual Redis server address if necessary.
-
----
 
 ## `--redis-port`
 
@@ -174,16 +145,9 @@ Example:
 ```
 
 Specifies the Redis server port.
-
-The default Redis port is:
-
-```text
-6379
-```
-
+The default Redis port is `6379`.
 Change this value if Redis is configured to use a different port.
 
----
 
 ## `--rank`
 
@@ -194,13 +158,7 @@ Example:
 ```
 
 Specifies the rank of the participating process.
-
-Each participant must use a unique rank from:
-
-```text
-0 ... size-1
-```
-
+Each participant must use a unique rank from `0 ... size-1`.
 For example, for three participating hosts:
 
 ```text
@@ -211,8 +169,6 @@ rank 2
 
 Benchmark results are printed by **rank 0**.
 
----
-
 ## `--size`
 
 Example:
@@ -222,19 +178,8 @@ Example:
 ```
 
 Specifies the total number of participating ranks.
+For example, a Broadcast experiment with one sender and two receivers uses `--size 3`.
 
-For example, a broadcast experiment with:
-
-* 1 sender
-* 2 receivers
-
-uses:
-
-```text
---size 3
-```
-
----
 
 ## `--prefix`
 
@@ -245,9 +190,7 @@ Example:
 ```
 
 The prefix identifies a specific rendezvous instance in Redis.
-
 All ranks participating in the same benchmark run must use the **same prefix**.
-
 Different benchmark runs should use different prefixes, unless the corresponding Redis state has been cleared.
 
 For example:
@@ -257,25 +200,18 @@ For example:
 --prefix peel_brdcst_run2
 ```
 
----
 
 ## `--threads`
 
-Use:
+**Use:**
 
 ```text
 --threads 1
 ```
 
 PEEL is currently single-threaded and relies on the network forwarding rules to replicate packets.
+Therefore, this value should remain **1**.
 
-Therefore, this value should remain:
-
-```text
-1
-```
-
----
 
 ## `--tcp-device`
 
