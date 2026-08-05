@@ -7,7 +7,6 @@ Our experimental topology consists of:
 * **16 virtual machines (VMs)** configured on each PVE node
 
 In addition to enabling OpenFlow on the core switch, OpenFlow must also be configured on the software switch running on each PVE node.
-
 Our environment was configured and tested with the following versions:
 
 | Component                      | Version |
