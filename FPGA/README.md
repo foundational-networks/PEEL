@@ -21,16 +21,16 @@ For example, in our Windows environment, the extracted project is located at `De
 
 Launch **AMD Vivado 2025.2** and select **Open Project**.
 
-![](1_open_project.png)
+![](pics/1_open_project.png)
 
 Navigate to the extracted project directory and select `project_1.xpr`.
 Then click **Open**.
 
-![](2_project_xpr.png)
+![](pics/2_project_xpr.png)
 
 Once the project is loaded, the **Sources** panel displays the project's design sources and simulation sources.
 
-![](3_examine_src.png)
+![](pics/3_examine_src.png)
 
 ---
 
@@ -43,11 +43,11 @@ To select or verify the testbench:
 1. Locate the **SIMULATION** section in the Flow Navigator.
 2. Right-click **Simulation** and select **Simulation Settings**.
 
-![](4_simulation_tab.png)
+![](pics/4_simulation_tab.png)
 
 Under the simulation settings, verify that **Simulation top module name** corresponds to the testbench you want to run.
 
-![](5_simulation_confirm.png)
+![](pics/5_simulation_confirm.png)
 
 Different testbench modules can be selected to validate different stages or components of the PEEL hardware pipeline.
 
@@ -57,12 +57,12 @@ Different testbench modules can be selected to validate different stages or comp
 
 From the **SIMULATION** section, select **Run Simulation → Run Behavioral Simulation**.
 
-![](6_simulation_run.png)
+![](pics/6_simulation_run.png)
 
 Wait for Vivado to compile the simulation sources and launch the simulator.
 After the simulation starts, the waveform viewer can be used to inspect the behavior of the selected testbench.
 
-![](7_sim_results.png)
+![](pics/7_sim_results.png)
 
 Depending on the testbench, different internal signals can be examined to verify the corresponding PEEL functionality.
 For example, signals such as:
@@ -80,7 +80,7 @@ can be monitored to identify when multicast packets are successfully received an
 
 To synthesize the FPGA design, navigate to the **SYNTHESIS** section in the Vivado Flow Navigator.
 
-![](8_synthesis.png)
+![](pics/8_synthesis.png)
 
 The provided project already contains synthesis results for the current design. You can either:
 
@@ -95,7 +95,7 @@ Running synthesis again is useful when modifying the RTL or targeting a differen
 
 After synthesis completes, proceed to the **IMPLEMENTATION** section.
 
-![](9_impl.png)
+![](pics/9_impl.png)
 
 You can either:
 
@@ -110,7 +110,7 @@ Implementation performs the placement and routing of the synthesized design for 
 
 To inspect the FPGA resource usage, open the **Tcl Console** in Vivado and run `report_utilization`.
 
-![](10_util.png)
+![](pics/10_util.png)
 
 Vivado will generate a detailed resource-utilization report showing the FPGA resources consumed by the PEEL design, including resources such as:
 
