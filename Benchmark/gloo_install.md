@@ -1,5 +1,5 @@
 
-# Compiling and Running PEEL's Gloo Benchmark
+# Compiling the Gloo Benchmark
 
 This directory contains the instructions required to install the dependencies, compile Gloo, and build the Gloo benchmarks in which PEEL is integrated.
 
