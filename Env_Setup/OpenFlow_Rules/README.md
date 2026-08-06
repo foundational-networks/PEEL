@@ -13,7 +13,7 @@ This directory contains the configuration files and instructions required to set
 
 ## Configure the Ryu Controller
 
-Refer to `ryu_controller.md` for instructions on installing and configuring the Ryu controller.
+Refer to [`ryu_controller.md`](ryu_controller.md) for instructions on installing and configuring the Ryu controller.
 
 > **Important:** The switch DPIDs and OpenFlow port mappings depend on the physical topology and VM configuration of the target environment. The mappings currently defined in `src/leafspine.py` correspond to our experimental testbed and will likely need to be updated before use.
 
@@ -21,6 +21,6 @@ Refer to `ryu_controller.md` for instructions on installing and configuring the 
 
 ## Configure the SDN Core Switch
 
-Refer to: `sdn_switch.md` for instructions on configuring the physical SDN core switch.
+Refer to: [`sdn_switch.md`](sdn_switch.md) for instructions on configuring the physical SDN core switch.
 
 > **Important:** The provided `src/peel` configuration is an exact export from the NVIDIA Mellanox SN2700 switch used in our experiments. Before applying it, review and update all environment-specific settings, including interface assignments, OpenFlow port mappings, management addresses, VLAN configuration, and controller information, to match the target hardware and network.
