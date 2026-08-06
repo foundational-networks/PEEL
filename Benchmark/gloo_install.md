@@ -1,9 +1,11 @@
 
 # Compiling the Gloo Benchmark
 
-This directory contains the instructions required to install the dependencies, compile Gloo, and build the Gloo benchmarks in which PEEL is integrated.
+This directory contains the instructions required to install the dependencies, compile Gloo, and build PEEL's Gloo benchmark from scratch.
 
-We used **Ubuntu 22.04** for our experiments. Accordingly, the instructions below are intended for **Ubuntu-based systems**.
+> **Note:** For discussions on how to run experiments, please refer to `PEEL/Benchmark/run_experiment.md`
+
+We used **Ubuntu 22.04** for our benchmark. Accordingly, the instructions below are intended for **Ubuntu-based systems**.
 
 To set up the Gloo benchmarks, follow these steps:
 
