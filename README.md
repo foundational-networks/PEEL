@@ -20,8 +20,9 @@ You can now refer to the `README` file within each component (e.g., `Omnet_Sims`
 
 **Omnet_Sims:** As also noted in the `Omnet_Sims` directory, to run a small-scale "Hello World" experiment, first follow **Steps 1–4** in the `Omnet_Sims/README` to install the simulator and set up the experimentation environment. Then, follow the instructions under **Small-scale simulations: Extra step for evaluation in a short time** to run the small-scale experiment. The entire process, including setup and simulation, is expected to take **less than 30 minutes**.
 
-**FPGA:** TBD
+**Benchmark:** To run quick experiments on our physical hardware, please refer to section **Example Testbed Experiment** in [`run_experiment.md`](Benchmark/run_experiment.md). This section provides commands that helps you quickly run validation experiments on our physical testbed.
 
+> **Note:** The physical testbed _Getting Started Instructions_ requires access to ourVPN and pre-setup VMs that needs special credentials provided by the authors.
 
 ## Detailed instructions
 
