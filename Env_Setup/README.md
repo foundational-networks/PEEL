@@ -1,49 +1,201 @@
-# Setting up the environment
+# Setting Up the Physical Testbed Environment
 
-# 1. Physical Topology & configuration
-Our Testbed physically contains the following parts:
-- a core switch Nvidia Mellanox SN2700, running firmware Onyx X86_64 3.9.3202 2021-08-11 15:04:27 x86_64
-- Three Physical servers have 100g Mellanox NIC installed, and each capable of hosting 16 VMs or more, each VM should be at least has two modern CPU cores and 2GB of memory.
-- We assumed there is also a separate VM or physical host available to server as the openflow controller, and connected and accessibled by all four euipqment (core switch & three servers)
-- Proxmox VE 9.1.1
+This document describes how to set up the physical testbed used for PEEL experiments, including the core switch, PVE hosts, OpenFlow controller, virtual machines, and switch mappings.
 
+---
 
-# 2. Setting up the Topology
-connect all three server to the core switch through its designated physical network interface using either a DAC/AOC/Fiber&Tranceiver connection. Make sure the link is up at 100Gbps.
-Depending on the actual network, also connect the host prepared for the openflow controller
-Depending on the actual network, make sure the core switch's management interface is connected (to itself or an upper layer swtich, needs to be accessible by the openflow switch)
+## Step 1: Physical Topology and Hardware Requirements
 
+Our testbed consists of the following components:
 
-# 3. Setting up the Core switch
-Refers to sdn_switch.md [step 1] to have the Mellanox SN2700 switch setup. we will come back to step 2 and 3 later.
-You might need to adjust the management interface to match the actual network condition and obtain a valid IP for it.
+* One **NVIDIA Mellanox SN2700** core switch running `Onyx X86_64 3.9.3202 2021-08-11 15:04:27 x86_64`
+* Three physical servers, each equipped with a **100 Gbps Mellanox NIC**.
+* Each physical server should be capable of hosting at least **16 VMs**.
+* Each VM should have at least:
 
-# 4. Install Proxmox VE
+  * 2 modern CPU cores
+  * 2 GB of memory
+* One additional VM or physical host to serve as the **Ryu OpenFlow controller**.
+* The OpenFlow controller must be reachable from:
 
-Install **Proxmox VE 9.1.1** on all three physical hosts and connect each host to the core switch 
+  * The core switch
+  * All three PVE hosts
+* Proxmox VE 9.1.1 installed on all three physical servers.
+
+---
+
+## Step 2: Connect the Physical Topology
+
+Connect each of the three physical servers to the core switch through its designated 100 Gbps network interface.
+
+The physical connection can use any compatible medium, such as:
+
+* DAC
+* AOC
+* Fiber with compatible transceivers
+
+After connecting the hosts, verify that each link is active and operating at **100 Gbps**.
+
+Depending on the target network environment:
+
+* Connect the host running the OpenFlow controller so that it is reachable from all three PVE hosts and the core switch.
+* Connect the management interface of the core switch to the appropriate management network or upstream switch.
+* Ensure that the core switch management interface is reachable from the host running the OpenFlow controller.
+
+---
+
+## Step 3: Configure the Core Switch
+
+Refer to [`sdn_switch.md`](sdn_switch.md) and follow **Step 1** to configure the NVIDIA Mellanox SN2700 switch.
+
+At this stage, only perform the initial switch configuration. The DPID and OpenFlow port mappings will be collected later.
+
+You may need to modify environment-specific settings such as:
+
+* Management IP address
+* Gateway
+* VLAN configuration
+* Physical interface assignments
+
+Make sure the switch management interface receives a valid and reachable IP address.
+
+---
+
+## Step 4: Install Proxmox VE
+
+Install **Proxmox VE 9.1.1** on all three physical servers.
+
 For detailed installation instructions, refer to the [official Proxmox VE installation guide](https://www.proxmox.com/en/products/proxmox-virtual-environment/get-started).
-After completing the PVE installation, connect to the management IP address of each host using SSH.
 
-# 5. Management IP
-Once installed, make sure to have PVE management interface a valid IP, you can either manually assign or automatic get one using DHCP if local network support it.
-Also double check here to make sure the core switch's management interface IP is static and accessible
+After installation:
 
-# 6. Prepare the OpenFlow Ryu Controller
-Refers to ryu_controller.md until step 4 to have it installed with our provided rules.
+1. Connect each PVE host to the core switch using its designated 100 Gbps NIC.
+2. Configure the PVE management interface.
+3. Verify that each host can be reached through SSH.
 
-# 7. Prepare the PVE OpenSwitch
-Refers to pve_switch.md until step 4 to have the openswitch configured.
+---
 
-# 8. Config the VM
-Refers to Benchmark/vm_setup.md to have VMs configured on all hosts.
+## Step 5: Configure Management Networking
 
-# 9. Obtain the DataPath ID and OpenFlow Port numbers
-For the core switch, refers to sdn_switch.md step 2 onward
-For the pve switch, refers to pve_switch.md setp 5 onward
-take a note of all the port mappings and datapath id.
+Ensure that each PVE host has a valid management IP address.
 
-# 10. Apply the updated mappings
-Refers to step 5 onwards in ryu_ctonroller.md to have the mapping loaded into the openflow controller.
+The management IP can be assigned either:
 
-# 11. Testing & Experimenting
-If everything configured correctly, refers to the PEEL/Benchmark to start experimenting.
+* Manually using a static configuration, or
+* Automatically through DHCP, if supported by the local network.
+
+For reproducibility, we recommend using static IP addresses or persistent DHCP leases.
+
+Also verify that:
+
+* The core switch management IP is static.
+* The core switch is reachable from the OpenFlow controller.
+* All PVE hosts can reach the OpenFlow controller.
+
+---
+
+## Step 6: Set Up the Ryu OpenFlow Controller
+
+Refer to [`ryu_controller.md`](ryu_controller.md) and follow the instructions through **Step 4**.
+
+At this stage, install and start the controller using the provided PEEL OpenFlow application.
+
+Do not finalize the switch DPID or OpenFlow port mappings yet; these will be updated after the physical and virtual topology has been fully configured.
+
+---
+
+## Step 7: Configure Open vSwitch on the PVE Hosts
+
+Refer to [`pve_switch.md`](pve_switch.md) and follow the instructions through **Step 4**.
+
+This configures the Open vSwitch bridge and connects each PVE host to the Ryu OpenFlow controller.
+
+Make sure that:
+
+* The correct physical NIC is attached to the Open vSwitch bridge.
+* The controller IP and port are correct.
+* The configured MTU matches the rest of the testbed.
+* Management connectivity remains available after applying the configuration.
+
+---
+
+## Step 8: Configure the Test VMs
+
+Refer to [`Benchmark/vm_setup.md`](Benchmark/vm_setup.md)
+and create the required VMs on all three PVE hosts.
+
+Our testbed uses:
+
+```text
+3 PVE hosts × 16 VMs per host = 48 VMs
+```
+
+After the VMs are created and started, verify that they have valid network connectivity.
+
+---
+
+## Step 9: Collect DPIDs and OpenFlow Port Mappings
+
+After the switches and VMs are fully configured, collect the actual switch identifiers and port mappings.
+
+### Core Switch
+
+Refer to [`sdn_switch.md`](sdn_switch.md) starting from **Step 2** to obtain:
+
+* Core-switch DPID
+* OpenFlow port numbers
+* Physical-interface-to-PVE-host mappings
+
+### PVE Open vSwitch Instances
+
+Refer to [`pve_switch.md`](pve_switch.md) starting from **Step 5** to obtain:
+
+* DPID of each PVE Open vSwitch
+* VM-to-OpenFlow-port mappings
+* Uplink OpenFlow port numbers
+
+Record all of these values carefully.
+
+> **Important:** These mappings depend on the actual hardware, cabling, and VM configuration and may differ from the values used in our testbed.
+
+---
+
+## Step 10: Update the Ryu Controller Mappings
+
+After collecting the actual DPIDs and OpenFlow port mappings, return to [ryu_controller.md](ryu_controller.md)
+
+```text
+
+```
+
+and follow the instructions starting from **Step 5**.
+
+Update `leafspine.py` with:
+
+* The DPID of the core switch
+* The DPID of each PVE Open vSwitch
+* The VM-to-OpenFlow-port mappings
+* The core-switch-to-PVE-host port mappings
+
+Restart the Ryu controller after applying the changes.
+
+---
+
+## Step 11: Validate the Setup and Run Experiments
+
+After completing the configuration, verify that:
+
+* All OpenFlow switches are connected to the Ryu controller.
+* The configured DPIDs match the actual switches.
+* VM-to-OpenFlow-port mappings are correct.
+* Core-switch port mappings are correct.
+* OpenFlow rules and group entries have been installed successfully.
+* VMs can communicate as expected.
+
+Once these checks pass, refer to the documentation under:
+
+```text
+PEEL/Benchmark/
+```
+
+to validate PEEL forwarding and begin running experiments.
