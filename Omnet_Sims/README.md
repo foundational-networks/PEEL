@@ -16,7 +16,7 @@ This repository provides the instructions and files required to run the simulati
 
 To successfully install Omnet++ and run the simulations, execute the following commands:
 
-```
+```bash
 sudo apt update
 sudo apt-get install -y build-essential
 sudo apt-get install -y flex bison
@@ -29,7 +29,7 @@ sudo apt-get install -y zip unzip
 
 Make sure you have python3 installed (if not, run ```sudo apt-get install -y python3```). If it is installed and accessible in "/usr/bin/python3" run the following: 
 
-```
+```bash
 sudo rm -rf /usr/bin/python
 sudo ln -s /usr/bin/python3 /usr/bin/python
 sudo apt install -y python3-numpy
@@ -42,7 +42,7 @@ sudo apt-get install -y python3-matplotlib
 
 The complete instructions for installing Omnet++ can be found in [Omnet++ installation guide](https://doc.omnetpp.org/omnetpp/InstallGuide.pdf). **In case you already have the simulator installed, you can skip this step.** To install Omnet++ on an Ubuntu OS, you should run the following commands:
 
-```
+```bash
 wget https://github.com/omnetpp/omnetpp/releases/download/omnetpp-5.6.2/omnetpp-5.6.2-src-linux.tgz
 tar xvfz omnetpp-5.6.2-src-linux.tgz
 cd omnetpp-5.6.2/
@@ -51,18 +51,18 @@ cd omnetpp-5.6.2/
 
 For the next line we are assuming that you have extracted omnet in $HOME. If this is not true, replace $HOME with the path you have extracted the omnet files to.
 
-```
+```bash
 echo "export PATH=$HOME/omnetpp-5.6.2/bin:\$PATH" >> ~/.bashrc
 ```
 
-```
+```bash
 source ~/.bashrc
 ./configure WITH_QTENV=no WITH_OSG=no WITH_OSGEARTH=no
 ```
 
 In case the configure command printed out that "omnetpp-5.6.2/bin" is not added to your path, close and re-open your terminal and run the configure command again. If you are not using GUI, reboot your system using ```sudo reboot```. Make sure you get the **"Your PATH contains /opt/omnetpp-5.6.2/bin. Good!"** message in the configuration process before moving forward.
 
-```
+```bash
 make
 ```
 
@@ -72,7 +72,7 @@ make
 
 To clone the repository, run the following script:
 
-```
+```bash
 git clone https://github.com/foundational-networks/PEEL.git
 ```
 
@@ -82,7 +82,7 @@ git clone https://github.com/foundational-networks/PEEL.git
 
 We have provided a ```build.sh``` shell script to simplify this process. To build the project modules and download the distribution files, run the following script:
 
-```
+```bash
 cd PEEL/Omnet_Sims/
 bash build.sh
 ```
@@ -93,7 +93,7 @@ bash build.sh
 
 Every scenario with [large-scale simulation](#step-6-running-the-large-scale-simulations-and-extracting-the-results) configurations takes days or even weeks to complete. Accordingly, we are providing a small-scale sample in which we run a single Broadcast collective with 8 MB messages among 64 nodes and compare the results of various techniques for those interested in evaluating the code in a short time. First, make sure that you are in the right directory ("PEEL/Omnet_Sims/dc_simulations/simulations/sims") and then use the following commands to extract the distribution files, run the simulations, and extract the results:
 
-```
+```bash
 cd dc_simulations/simulations/sims
 bash extract_dist_files_sample.sh
 ./run_sample.sh
@@ -145,7 +145,7 @@ The results above show that PEEL achieves performance closest to the optimal mul
 
 The config files for large-scale simulations can be used for evaluating various collective operations and algorithms. To run the large-scale simulations under distinct collective algorithms for a specific collective operation, first make sure that you are in the right directory (```PEEL/Omnet_Sims/dc_simulations/simulations/sims```) and then use the following commands to download the distribution files, run the simulations, extract the results, and plot the figures:
 
-```
+```bash
 bash $DIST_DOWNLOWDER.sh
 ./$EXPERIMENT_RUN_FILE.sh
 cp data_extraction_codes/* extracted_results/
