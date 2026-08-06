@@ -43,10 +43,6 @@ This section provides the commands required to run a small validation experiment
 
 > **Note:** The physical-testbed _Getting Started workflow_ requires access to our VPN and preconfigured VMs and needs special credentials provided by the authors. If such credentials are not provided to you, please kindly follow the steps in `Benchmark/` to build the project on your testbed from scratch.
 
-### FPGA
-
-Refer to the [`FPGA/README.md`](FPGA/README.md) for instructions on opening the provided Vivado project and running the included behavioral simulations.
-
 ---
 
 ## Detailed Instructions
