@@ -9,7 +9,7 @@ Before running any PEEL benchmark, make sure that:
 
 In this document, we assume that the compiled Gloo benchmark binary is located at `/opt/PEEL/Benchmark/gloo/build_bench/gloo/benchmark/benchmark`. If Gloo has not yet been compiled, refer to `PEEL/Benchmark/gloo_install.md`.
 
-> **Note:** If you have been provided with credentials to access our preconfigured VMs, where Gloo and all required dependencies are already installed, you can skip the setup steps and jump directly to [the example testbed configuration](#example-testbed-configuration) to run a validation scenario.
+> **Note:** If you have been provided with credentials to access our preconfigured VMs, where Gloo and all required dependencies are already installed, you can skip the setup steps and jump directly to [the example testbed configuration](#example-testbed-experiment) to run a validation scenario.
 
 > **Note:** For running the experiments, you require `sudo` access.
 
