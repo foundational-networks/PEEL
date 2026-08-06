@@ -12,7 +12,7 @@ Before testing, double-check that:
 
 ---
 
-# 1. Testbed Configuration
+## Testbed Configuration
 
 For demonstration purposes, our testbed uses a **static hierarchical multicast forwarding policy for PEEL** across a small leaf-spine topology:
 
@@ -32,7 +32,7 @@ The forwarding design uses:
 
 ---
 
-# 2. Topology and Static Assumptions
+## Topology and Static Assumptions
 
 The following assumptions are used by the current PEEL controller configuration:
 
@@ -48,9 +48,7 @@ The following assumptions are used by the current PEEL controller configuration:
 
 > **Note:** VLAN 144 is specific to our test environment and is not inherently required by PEEL.
 
----
-
-## 2.1 Static DPIDs
+### Static DPIDs
 
 Our current testbed uses the following switch DPIDs:
 
@@ -63,11 +61,9 @@ Our current testbed uses the following switch DPIDs:
 
 These values must be replaced if the switches in the target environment use different DPIDs.
 
----
+### Current OpenFlow Ports
 
-## 2.2 Current OpenFlow Ports
-
-### PVE Switch 105
+Ports for PVE Switch 105:
 
 | Function        | OpenFlow Port |
 | --------------- | ------------: |
@@ -75,7 +71,7 @@ These values must be replaced if the switches in the target environment use diff
 | Management      |             2 |
 | Active VM ports |          3, 4 |
 
-### Core Switch
+Ports for Core Switch:
 
 | Connection | OpenFlow Port |
 | ---------- | ------------: |
@@ -83,14 +79,14 @@ These values must be replaced if the switches in the target environment use diff
 | PVE 106    |            73 |
 | PVE 107    |            75 |
 
-### PVE Switch 106
+Ports for PVE Switch 106:
 
 | Function        | OpenFlow Port |
 | --------------- | ------------: |
 | Uplink          |             1 |
 | Active VM ports |          3–10 |
 
-### PVE Switch 107
+Ports for PVE Switch 107:
 
 | Function        | OpenFlow Port |
 | --------------- | ------------: |
@@ -103,7 +99,7 @@ These values must be replaced if the switches in the target environment use diff
 
 ---
 
-# 3. High-Level Forwarding Logic
+## High-Level Forwarding Logic
 
 PEEL encodes forwarding decisions into bytes of the destination MAC address.
 The current implementation uses three hop-selection bytes:
@@ -128,7 +124,7 @@ Each forwarding rule matches the full **8-bit value** of the corresponding desti
 
 ---
 
-# 4. Controller Behavior When a Switch Connects
+## Controller Behavior When a Switch Connects
 
 Whenever an OpenFlow switch connects to the controller and generates an `EventOFPSwitchFeatures` event, the controller performs the following initialization sequence:
 
@@ -144,9 +140,9 @@ This ensures that the forwarding state is reinitialized whenever a switch reconn
 
 ---
 
-# 5. Prefix Rules and Port Mapping
+## Prefix Rules and Port Mapping
 
-## 5.1 General Assumptions
+### General Assumptions
 
 The current PEEL leaf-switch rule set supports up to:
 
@@ -164,9 +160,7 @@ The complete 16-node rule space is still installed on the leaf switches.
 
 > **Traffic directed toward an unused VM port is dropped.**
 
----
-
-## 5.2 Prefix-Encoding Examples
+### Prefix-Encoding Examples
 
 The forwarding byte encodes both a prefix length and a logical port/range.
 For example:
@@ -178,9 +172,8 @@ For example:
 | 1            | Leaf port 1    | `101 00001`     | `0xA1` |
 | 2            | Leaf port 2    | `101 00010`     | `0xA2` |
 
----
 
-## 5.3 Leaf-Switch Rules
+### Leaf-Switch Rules
 
 The current leaf-rule encoding uses:
 
@@ -195,7 +188,7 @@ The current leaf-rule encoding uses:
 * Encoding format: `<prefix_length_bits> <prefix_value>`
 
 
-### Range Aggregation Rules
+Range Aggregation Rules:
 
 | Port Range | Type | Prefix (binary) | HEX    |
 | ---------- | ---- | --------------- | ------ |
@@ -207,7 +200,7 @@ The current leaf-rule encoding uses:
 | 8–11       | node | `011 01000`     | `0x68` |
 | 12–15      | node | `011 01100`     | `0x6C` |
 
-### Pair-Based Rules
+Pair-Based Rules:
 
 | Port Range | Prefix (binary) | HEX    |
 | ---------- | --------------- | ------ |
@@ -220,7 +213,7 @@ The current leaf-rule encoding uses:
 | 12–13      | `100 01100`     | `0x8C` |
 | 14–15      | `100 01110`     | `0x8E` |
 
-### Per-Port Rules
+Per-Port Rules:
 
 | Port | Type   | Prefix (binary) | HEX    |
 | ---: | ------ | --------------- | ------ |
@@ -244,13 +237,10 @@ The current leaf-rule encoding uses:
 
 These rules encode both individual destinations and aggregated destination ranges, allowing a single encoded forwarding value to replicate traffic toward multiple receivers.
 
----
 
-## 5.4 Current Logical Port Mapping
+### Current Logical Port Mapping
 
-### Core / Spine
-
-The core uses the following logical mapping:
+The core switch uses the following logical mapping:
 
 | Logical Port | Connection     |
 | -----------: | -------------- |
@@ -258,9 +248,7 @@ The core uses the following logical mapping:
 |            1 | PVE switch 106 |
 |            2 | PVE switch 107 |
 
-### Leaf Switches
-
-Each leaf uses:
+Each leaf switch uses:
 
 | Logical Port Range | Assignment           |
 | ------------------ | -------------------- |
@@ -269,9 +257,8 @@ Each leaf uses:
 
 The logical port numbers are mapped to the actual OpenFlow port numbers configured in `leafspine.py`.
 
----
 
-## 5.5 Fallback Rule
+### Fallback Rule
 
 All switches include a lowest-priority fallback rule:
 
@@ -284,11 +271,11 @@ This allows ordinary non-PEEL traffic to use normal switching behavior.
 
 ---
 
-# 6. Testing PEEL Forwarding
+## Testing PEEL Forwarding
 
 After the controller, switches, and VMs are configured, use the following procedure to verify that PEEL multicast forwarding is working correctly.
 
-## 6.1: Verify `tcpdump`
+### Verify `tcpdump`
 
 Make sure `tcpdump` is installed on the test VMs.
 If the instructions in `vm_setup.md` were followed, it should already be available.
@@ -303,9 +290,8 @@ OpenSSL 3.5.5 27 Jan 2026
 64-bit build, 64-bit time_t
 ```
 
----
 
-## 6.2: Select the Sender and Receivers
+### Select the Sender and Receivers
 
 For this example, we use:
 
@@ -341,9 +327,8 @@ PVE 106
   `------- kynar   (should NOT receive)
 ```
 
----
 
-## 6.3: Start Packet Capture on the Receivers
+### Start Packet Capture on the Receivers
 
 PEEL currently rewrites the destination MAC address of packets delivered to receiver hosts to:
 
@@ -368,9 +353,9 @@ Optionally, run the same command on `kynar` to verify that traffic is **not** de
 
 > **Note:** Replace `ens18` with the actual network interface name inside the VM if it differs.
 
----
 
-## 6.4: Prepare the Sender
+
+### Prepare the Sender
 
 On the sender VM, clone PEEL if it is not already available:
 
@@ -391,9 +376,8 @@ Verify that Python 3 is installed:
 python3 --version
 ```
 
----
 
-## 6.5: Construct the PEEL Destination MAC
+### Construct the PEEL Destination MAC
 
 For this example, we want to send from `PVE 105` to `PVE 106, VM ports 0–1`.
 The required PEEL forwarding MAC is `b0:a1:80:00:00:00`.
@@ -407,9 +391,8 @@ a1 -> core: forward toward PVE switch 106
 
 The remaining three bytes are not used by the current forwarding logic, so they are set to `00:00:00`.
 
----
 
-## 6.6: Send Test Traffic
+### Send Test Traffic
 
 From the sender VM, run:
 
@@ -424,9 +407,8 @@ python3 send_of_mcast.py \
 Replace `ens18` if the sender uses a different network interface.
 This command sends three test packets, one second apart.
 
----
 
-## 6.7: Verify the Result
+### Verify the Result
 
 If PEEL forwarding is working correctly:
 
@@ -446,7 +428,7 @@ This validates that:
 
 ---
 
-# 7. Additional Test Profiles
+## Additional Test Profiles
 
 The `send_of_mcast.py` helper script includes several preconfigured forwarding profiles:
 
@@ -482,7 +464,7 @@ python3 send_of_mcast.py \
 
 ---
 
-# 8. Next Step
+## Next Step
 
 If the forwarding test succeeds, the PEEL environment is ready for benchmark execution.
 Before starting a benchmark, we still recommend performing one final verification of:
