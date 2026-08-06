@@ -46,7 +46,7 @@ Depending on the target network environment:
 
 ## Step 3: Configure the Core Switch
 
-Refer to [`sdn_switch.md`](sdn_switch.md) and follow **Step 1** to configure the NVIDIA Mellanox SN2700 switch.
+Refer to [`sdn_switch.md`](OpenFlow_Rules/sdn_switch.md) and follow **Step 1** to configure the NVIDIA Mellanox SN2700 switch.
 
 At this stage, only perform the initial switch configuration. The DPID and OpenFlow port mappings will be collected later.
 
@@ -96,7 +96,7 @@ Also verify that:
 
 ## Step 6: Set Up the Ryu OpenFlow Controller
 
-Refer to [`ryu_controller.md`](ryu_controller.md) and follow the instructions through **Step 4**.
+Refer to [`ryu_controller.md`](OpenFlow_Rules/ryu_controller.md) and follow the instructions through **Step 4**.
 
 At this stage, install and start the controller using the provided PEEL OpenFlow application.
 
@@ -106,7 +106,7 @@ Do not finalize the switch DPID or OpenFlow port mappings yet; these will be upd
 
 ## Step 7: Configure Open vSwitch on the PVE Hosts
 
-Refer to [`pve_switch.md`](pve_switch.md) and follow the instructions through **Step 4**.
+Refer to [`pve_switch.md`](OpenFlow_Rules/pve_switch.md) and follow the instructions through **Step 4**.
 
 This configures the Open vSwitch bridge and connects each PVE host to the Ryu OpenFlow controller.
 
@@ -140,7 +140,7 @@ After the switches and VMs are fully configured, collect the actual switch ident
 
 ### Core Switch
 
-Refer to [`sdn_switch.md`](sdn_switch.md) starting from **Step 2** to obtain:
+Refer to [`sdn_switch.md`](OpenFlow_Rules/sdn_switch.md) starting from **Step 2** to obtain:
 
 * Core-switch DPID
 * OpenFlow port numbers
@@ -148,7 +148,7 @@ Refer to [`sdn_switch.md`](sdn_switch.md) starting from **Step 2** to obtain:
 
 ### PVE Open vSwitch Instances
 
-Refer to [`pve_switch.md`](pve_switch.md) starting from **Step 5** to obtain:
+Refer to [`pve_switch.md`](OpenFlow_Rules/pve_switch.md) starting from **Step 5** to obtain:
 
 * DPID of each PVE Open vSwitch
 * VM-to-OpenFlow-port mappings
@@ -162,12 +162,7 @@ Record all of these values carefully.
 
 ## Step 10: Update the Ryu Controller Mappings
 
-After collecting the actual DPIDs and OpenFlow port mappings, return to [ryu_controller.md](ryu_controller.md)
-
-```text
-
-```
-
+After collecting the actual DPIDs and OpenFlow port mappings, return to [ryu_controller.md](OpenFlow_Rules/ryu_controller.md)
 and follow the instructions starting from **Step 5**.
 
 Update `leafspine.py` with:
@@ -192,10 +187,5 @@ After completing the configuration, verify that:
 * OpenFlow rules and group entries have been installed successfully.
 * VMs can communicate as expected.
 
-Once these checks pass, refer to the documentation under:
-
-```text
-PEEL/Benchmark/
-```
-
+Once these checks pass, refer to the documentation under `PEEL/Benchmark/`
 to validate PEEL forwarding and begin running experiments.
