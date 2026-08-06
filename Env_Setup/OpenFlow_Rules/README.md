@@ -1,17 +1,26 @@
-files:
-src/leafspine.py : openflow rules loaded to all four sdn switches
-src/peel : switch config loaded to the core mellanox sn2700 openflow switch
+# OpenFlow and SDN Switch Configuration
 
-Note:
-Due to the limit of the lab networks, the switch is configured with VLAN 144 for all traffic, including management port and all experiment traffic.
+This directory contains the configuration files and instructions required to set up the OpenFlow controller and SDN switches used by PEEL.
 
+## Files
 
-1. configuring ryu controller
---> ryu_controller.md
-Note that the actual port mapping entirely depend on the actual host and switches setup, and is likely different from the mapping we used in the leafspine.py
+* `src/leafspine.py`: Ryu OpenFlow application containing the forwarding rules installed on all four SDN switches in our testbed.
+* `src/peel`: Configuration file exported from the NVIDIA Mellanox SN2700 core OpenFlow switch used in our experiments.
 
+> **Note:** Due to restrictions in our laboratory network, VLAN `144` is used for both management and experimental traffic. This VLAN configuration is specific to our environment and should be adjusted as needed for other deployments.
 
+---
 
-2. configure the sdn switch
---> sdn_switch.md
-Note that the config provided is an exact copy exported from our experiment switch, Nvidia Mellanox SN2700. the port mapping and configurations will needs to be updated to match the actual equipment used
+## Configure the Ryu Controller
+
+Refer to `ryu_controller.md` for instructions on installing and configuring the Ryu controller.
+
+> **Important:** The switch DPIDs and OpenFlow port mappings depend on the physical topology and VM configuration of the target environment. The mappings currently defined in `src/leafspine.py` correspond to our experimental testbed and will likely need to be updated before use.
+
+---
+
+## Configure the SDN Core Switch
+
+Refer to: `sdn_switch.md` for instructions on configuring the physical SDN core switch.
+
+> **Important:** The provided `src/peel` configuration is an exact export from the NVIDIA Mellanox SN2700 switch used in our experiments. Before applying it, review and update all environment-specific settings, including interface assignments, OpenFlow port mappings, management addresses, VLAN configuration, and controller information, to match the target hardware and network.
