@@ -36,13 +36,10 @@ To run a small-scale "Hello World" simulation:
 1. Follow **Steps 1–4** in [`Omnet_Sims/README.md`](Omnet_Sims/README.md) to install the simulator and set up the experimental environment.
 2. Follow the instructions under **Small-scale simulations: Extra step for evaluation in a short time** to run the provided small-scale experiment.
 
-The complete process, including environment setup and simulation, is expected to take **less than 30 minutes**.
-
 ### Benchmark
 
 To quickly validate PEEL on our physical testbed, refer to the **Example Testbed Experiment** section in [`Benchmark/run_experiment.md`](Benchmark/run_experiment.md).
 This section provides the commands required to run a small validation experiment using the preconfigured physical testbed.
-This process is expected to take **less than 30 minutes**.
 
 > **Note:** The physical-testbed _Getting Started workflow_ requires access to our VPN and preconfigured VMs and needs special credentials provided by the authors. If such credentials are not provided to you, please kindly follow the steps in `Benchmark/` to build the project on your testbed from scratch.
 
@@ -63,11 +60,9 @@ For large-scale simulations:
 1. If you have not already done so, follow **Steps 1–4** in [`Omnet_Sims/README.md`](Omnet_Sims/README.md) to install the simulator and configure the experimental environment.
 2. Follow **Step 6: Running the large-scale simulations and extracting the results** to execute the full experiments and extract their results.
 
-Unlike the small-scale example, the large-scale simulations can take **several days to multiple weeks**, depending on the selected experiment and configuration.
-
 ### Benchmark
 
-For complete physical-testbed setup and evaluation, refer to the documentation under [`Benchmark/`](Benchmark/), including instructions for:
+For complete physical-testbed setup and evaluation, refer to the documentation under [`Benchmark/`](Benchmark/) and [`Env_Setup/`](Env_Setup/) that include instructions for:
 
 * Installing and compiling the PEEL-enabled Gloo benchmark.
 * Configuring the Ryu OpenFlow controller.
@@ -85,6 +80,8 @@ Refer to [`FPGA/README.md`](FPGA/README.md) for instructions on:
 * Running synthesis and implementation.
 * Inspecting FPGA resource utilization.
 
+> **Note:** The PEEL FPGA module is not tied to a specific FPGA board model, as long as the target device provides sufficient hardware resources.
+
 ---
 
-Please refer to our **NSDI 2027 paper** for additional details about PEEL and the experiments reproduced by these artifacts. If you encounter any issues or have questions regarding the artifacts, please contact the authors.
+Please refer to our **NSDI 2027 paper** for additional details about PEEL. If you have questions, please contact the authors.
