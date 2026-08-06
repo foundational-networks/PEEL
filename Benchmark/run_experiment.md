@@ -9,9 +9,14 @@ Before running any PEEL benchmark, make sure that:
 
 In this document, we assume that the compiled Gloo benchmark binary is located at `/opt/PEEL/Benchmark/gloo/build_bench/gloo/benchmark/benchmark`. If Gloo has not yet been compiled, refer to `PEEL/Benchmark/gloo_install.md`.
 
+> **Note:** If you have been provided with credentials to access our preconfigured VMs, where Gloo and all required dependencies are already installed, you can skip the setup steps and jump directly to [the example testbed configuration](#example-testbed-configuration) to run a validation scenario.
+
+> **Note:** For running the experiments, you require `sudo` access.
+
+
 ---
 
-# Step 1: Install and Configure Redis
+## Step 1: Install and Configure Redis
 
 Gloo uses Redis for rendezvous and connection setup between participating ranks. Therefore, a Redis server must be running on a host that is reachable from all benchmark participants. To install Redis and enable it, run the following commands:
 
@@ -41,13 +46,13 @@ systemctl status redis-server
 
 ---
 
-# Step 2: Create the PEEL Topology File
+## Step 2: Create the PEEL Topology File
 
 PEEL requires a topology file specified using `--peel-topology-file`.
 The topology file describes the physical graph connecting servers and switches.
 PEEL reads this adjacency-list representation, constructs a minimum spanning tree rooted at the sender rank, and partitions the tree into subtrees used for multicast forwarding.
 
-## Topology File Format
+### Topology File Format
 
 Each line contains two node identifiers separated by whitespace: `NODE_A NODE_B`.
 A node identifier can be either:
@@ -101,7 +106,9 @@ https://github.com/foundational-networks/gloo/blob/peel_integration/gloo/transpo
 
 ---
 
-# Step 3: Compose the Benchmark Command
+## Step 3: Compose the Benchmark Command
+
+> **Note:** For running the experiments, you need `sudo` access.
 
 A PEEL benchmark command has the following general form:
 
@@ -124,38 +131,26 @@ A PEEL benchmark command has the following general form:
 
 The following sections describe each argument.
 
-## `--redis-host`
+### `--redis-host`
 
-Example:
-
-```text
---redis-host 10.169.144.14
-```
+Example: `--redis-host 10.169.144.14`
 
 Specifies the IP address of the Redis server used for rendezvous.
 Replace `10.169.144.14` with the actual Redis server address if necessary.
 
 
-## `--redis-port`
+### `--redis-port`
 
-Example:
-
-```text
---redis-port 6379
-```
+Example: `--redis-port 6379`
 
 Specifies the Redis server port.
 The default Redis port is `6379`.
 Change this value if Redis is configured to use a different port.
 
 
-## `--rank`
+### `--rank`
 
-Example:
-
-```text
---rank 0
-```
+Example: `--rank 0`
 
 Specifies the rank of the participating process.
 Each participant must use a unique rank from `0 ... size-1`.
@@ -169,25 +164,17 @@ rank 2
 
 Benchmark results are printed by **rank 0**.
 
-## `--size`
+### `--size`
 
-Example:
-
-```text
---size 3
-```
+Example: `--size 3`
 
 Specifies the total number of participating ranks.
 For example, a Broadcast experiment with one sender and two receivers uses `--size 3`.
 
 
-## `--prefix`
+### `--prefix`
 
-Example:
-
-```text
---prefix peel_brdcst0807b
-```
+Example: `--prefix peel_brdcst0807b`
 
 The prefix identifies a specific rendezvous instance in Redis.
 All ranks participating in the same benchmark run must use the **same prefix**.
@@ -200,51 +187,38 @@ For example:
 --prefix peel_brdcst_run2
 ```
 
+> **Note:** `prefix` can be set to any arbitrary string. If you encounter the error `Key 'prefix' already set.` when starting an experiment, simply rerun the experiment with a different `prefix` value.
 
-## `--threads`
 
-**Use:**
 
-```text
---threads 1
-```
+### `--threads`
+
+**Use:** `--threads 1`
 
 PEEL is currently single-threaded and relies on the network forwarding rules to replicate packets.
 Therefore, **this value should remain 1**.
 
 
-## `--tcp-device`
+### `--tcp-device`
 
-Example:
-
-```text
---tcp-device=ens18
-```
+Example: `--tcp-device=ens18`
 
 Specifies the network interface used by Gloo's TCP transport for rendezvous and control-plane connection establishment.
 Replace `ens18` if the participating VM uses a different network interface.
 
 
 
-## `--peel-iface`
+### `--peel-iface`
 
-Example:
-
-```text
---peel-iface=ens18
-```
+Example: `--peel-iface=ens18`
 
 Specifies the network interface used by the PEEL transport.
 In our setup, this is the same interface used for the Gloo TCP control connection: `ens18`.
 
 
-## `--iteration-count`
+### `--iteration-count`
 
-Example:
-
-```text
---iteration-count 1
-```
+Example: `--iteration-count 1`
 
 Specifies the number of benchmark iterations performed for each tested message size.
 For initial validation, we recommend using `--iteration-count 1`.
@@ -252,39 +226,25 @@ Larger values can be used for performance evaluation.
 
 
 
-## `--peel-topology-file`
+### `--peel-topology-file`
 
-Example:
-
-```text
---peel-topology-file /opt/PEEL/Benchmark/peel_topology.txt
-```
+Example: `--peel-topology-file /opt/PEEL/Benchmark/peel_topology.txt`
 
 Specifies the topology file used by PEEL.
 For our testbed, use `/opt/PEEL/Benchmark/peel_topology.txt`.
 
 
-## `--peel-max-payload`
+### `--peel-max-payload`
 
-Example:
-
-```text
---peel-max-payload=8900
-```
+Example: `--peel-max-payload=8900`
 
 Specifies the maximum PEEL packet payload size.
 Our experimental configuration uses `8900 bytes` which is compatible with our jumbo-frame network configuration.
 
 
-## Collective
+### `Collective`
 
 The final argument specifies the collective benchmark to execute.
-For example, `peel_broadcast` or `peel_broadcast_ring`.
-
-
-
-# Supported Collectives
-
 The benchmark currently supports the following collectives:
 
 ```text
@@ -309,6 +269,8 @@ sendrecv_roundtrip
 sendrecv_stress
 isendirecv_stress
 
+------------------------------------
+
 peel_broadcast
 peel_broadcast_ring
 peel_broadcast_stop_and_wait
@@ -332,20 +294,16 @@ broadcast_ring
 broadcast_stop_and_wait
 ```
 
-The original Gloo collectives are the remaining entries.
-
-## PEEL vs. Baseline Implementations
-
+The rest are the original Gloo collectives.
 Among the newly added collectives, the commands beginning directly with `peel_*`
 and without an additional baseline suffix use the actual PEEL transport where applicable.
-
 The `*_ring` and `*_stop_and_wait` variants are provided primarily as comparison baselines. They use similar stop-and-wait behavior over one-to-one UDP communication rather than relying on PEEL's in-network multicast forwarding.
 
 ---
 
-# Example Testbed Configuration
+## Example Testbed Experiment
 
-For the following example, our environment uses:
+This section provides an example experiment in our environment. For this example, our environment uses:
 
 | Parameter                | Value                                                           |
 | ------------------------ | --------------------------------------------------------------- |
@@ -354,7 +312,7 @@ For the following example, our environment uses:
 | Gloo benchmark binary    | `/opt/PEEL/Benchmark/gloo/build_bench/gloo/benchmark/benchmark` |
 | NIC on participating VMs | `ens18`                                                         |
 
-Suppose we run a broadcast using three hosts:
+We run a broadcast using three hosts:
 
 | Rank | Host    | IP              | PVE Host | Role     |
 | ---: | ------- | --------------- | -------: | -------- |
@@ -373,9 +331,9 @@ All three ranks must use:
 * The same topology file
 * A unique rank
 
----
+### Run the Benchmark
 
-# Step 4: Run the Benchmark
+> **Note:** Make sure you have `sudo` access on all VMs before running the experiment.
 
 Navigate to the benchmark build directory on each participating VM:
 
@@ -385,9 +343,11 @@ cd /opt/PEEL/Benchmark/gloo/build_bench
 
 For this example, use the prefix `peel_brdcst0807b`.
 
-## Rank 0 — `tovin`
+> **Note:** `prefix` can be set to any arbitrary string. If you encounter the error `Key 'prefix' already set.` when starting an experiment, simply rerun the experiment with a different `prefix` value.
 
-Run:
+> **Important:** All ranks must use the same value for `--prefix`. If one rank uses a different prefix, the participants will not join the same rendezvous instance.
+
+On **Rank 0 — `tovin`** run:
 
 ```bash
 ./gloo/benchmark/benchmark \
@@ -406,11 +366,7 @@ Run:
     peel_broadcast
 ```
 
----
-
-## Rank 1 — `tovra`
-
-Run:
+On **Rank 1 — `tovra`** run:
 
 ```bash
 ./gloo/benchmark/benchmark \
@@ -431,9 +387,7 @@ Run:
 
 ---
 
-## Rank 2 — `xelar`
-
-Run:
+On **Rank 2 — `xelar`** run:
 
 ```bash
 ./gloo/benchmark/benchmark \
@@ -454,11 +408,8 @@ Run:
 
 Start the commands on all participating hosts for the same benchmark run.
 
-> **Important:** All ranks must use the same value for `--prefix`. If one rank uses a different prefix, the participants will not join the same rendezvous instance.
 
----
-
-# Step 5: Verify the Benchmark Results
+### Verify the Benchmark Results
 
 After the benchmark completes, the results are printed on **rank 0**.
 The output should have a format similar to:
@@ -493,8 +444,6 @@ Options:     processes=3, inputs=1, threads=1, verify=true
 ====================================================================================================
 ```
 
-> **Note:** The values above are provided only to illustrate the expected output format and should not be interpreted as representative PEEL performance results.
-
 The table reports performance for multiple message sizes, including:
 
 * Message size in bytes
@@ -510,7 +459,7 @@ If the benchmark completes successfully on all ranks and rank 0 prints the resul
 
 ---
 
-# Running Additional Experiments
+## Running Additional Experiments
 
 After successfully completing the three-node `peel_broadcast` example, you can extend the experiment by changing:
 
