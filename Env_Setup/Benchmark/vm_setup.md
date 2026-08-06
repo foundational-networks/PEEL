@@ -125,13 +125,3 @@ This allows the cloned VMs to be accessed without having to configure SSH authen
 Make sure that the resulting SSH configuration matches the security requirements of the target environment.
 
 ---
-
-## Step 7: Start the VMs and Verify OpenFlow Port Ordering
-
-After all VMs have been created, we recommend powering them off and then starting them in a consistent sequence using PVE's bulk-start functionality.
-This helps keep the OpenFlow port assignments of the VM `tap` interfaces as predictable as possible.
-
-> **Important:** OpenFlow port numbers associated with VM interfaces may change when VMs are restarted. After starting the VMs, always verify the VM-to-OpenFlow-port mappings on each PVE host before running an experiment.
-
-The verified mappings must match the corresponding entries configured in the Ryu controller's `leafspine.py` file.
-

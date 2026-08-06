@@ -155,6 +155,8 @@ reboot
 
 > **Important:** Because modifying `/etc/network/interfaces` can interrupt network connectivity, we recommend applying the configuration while console access to the physical host is available.
 
+## Step 5: Verify OpenFlow Status
+
 After the host reboots, reconnect to it and verify the Open vSwitch configuration:
 
 ```bash
@@ -162,11 +164,10 @@ ovs-vsctl show
 ```
 
 Before the VMs are started, it is normal for VM-specific `tap` interfaces to be absent from this output.
-For instructions on creating and configuring the VMs, refer to:
 
-```text
-PEEL/Env_Setup/vm_setup.md
-```
+
+> **Important:** OpenFlow port numbers associated with VM interfaces may change when VMs are restarted. After all VMs have been created, we recommend powering them off and then starting them in a consistent sequence using PVE's bulk-start functionality. This helps keep the OpenFlow port assignments of the VM `tap` interfaces as predictable as possible.
+
 
 After the VMs are configured and running, the output should look similar to:
 
@@ -193,7 +194,7 @@ The following field indicates that the Open vSwitch bridge is connected to the c
 
 ---
 
-## Step 5: Troubleshoot the OpenFlow Connection
+## Step 6: Troubleshoot the OpenFlow Connection
 
 If the OpenFlow controller is not connected correctly, first explicitly configure the bridge to use OpenFlow 1.3:
 
@@ -240,7 +241,7 @@ The most useful field for determining the current connection state is: `is_conne
 
 ---
 
-## Step 6: Configure Standalone Fail Mode
+## Step 7: Configure Standalone Fail Mode
 
 To retain network connectivity when the OpenFlow controller is unavailable, configure the bridge to use `standalone` fail mode:
 
@@ -252,7 +253,7 @@ With this configuration, Open vSwitch can continue forwarding traffic using norm
 
 ---
 
-## Step 7: Verify the OpenFlow Configuration
+## Step 8: Verify the OpenFlow Configuration
 
 Verify that the bridge is operating with OpenFlow 1.3:
 
@@ -314,7 +315,7 @@ In this example, the DPID is:
 
 ---
 
-## Step 8: Verify VM-to-OpenFlow Port Mapping
+## Step 9: Verify VM-to-OpenFlow Port Mapping
 
 The output of:
 

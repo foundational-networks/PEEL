@@ -1,21 +1,4 @@
-# SDN Switch Configuration
-
-Our test network uses the following topology:
-
-* One **NVIDIA Mellanox SN2700** core switch
-* Three **PVE software switches**
-
-OpenFlow is enabled on all switches.
-
----
-
-## Configure the NVIDIA Mellanox SN2700 Core Switch
-
-Our SN2700 switch is running:
-
-```text
-Onyx X86_64 3.9.3202 2021-08-11 15:04:27 x86_64
-```
+## Step 1: Configure the NVIDIA Mellanox SN2700 Core Switch
 
 To load the provided PEEL configuration onto the SN2700 switch:
 
@@ -38,11 +21,11 @@ To load the provided PEEL configuration onto the SN2700 switch:
 The Ryu controller identifies the SN2700 switch using its **Datapath ID (DPID)** and communicates with individual switch interfaces through their assigned **OpenFlow port numbers**.
 These values must be recorded and later added to the PEEL Ryu controller configuration.
 
-### Step 1: Connect to the Switch
+### Step 2: Connect to the Switch
 
 Connect to the switch through SSH using its management IP address.
 
-### Step 2: Examine the OpenFlow Configuration
+### Step 3: Examine the OpenFlow Configuration
 
 Run:
 
