@@ -29,14 +29,14 @@ After cloning the repository, refer to the `README` file within each component f
 
 The following instructions are intended for those who want to quickly validate the main artifact components.
 
-### Omnet_Sims
+### Network Simulations
 
 To run a small-scale "Hello World" simulation:
 
 1. Follow **Steps 1–4** in [`Omnet_Sims/README.md`](Omnet_Sims/README.md) to install the simulator and set up the experimental environment.
 2. Follow the instructions under **Small-scale simulations: Extra step for evaluation in a short time** to run the provided small-scale experiment.
 
-### Benchmark
+### Testbed Experiments
 
 To quickly validate PEEL on our physical testbed, refer to the **Example Testbed Experiment** section in [`Benchmark/run_experiment.md`](Benchmark/run_experiment.md).
 This section provides the commands required to run a small validation experiment using the preconfigured physical testbed.
@@ -49,14 +49,14 @@ This section provides the commands required to run a small validation experiment
 
 The following sections provide guidance for reproducing the full experiments.
 
-### Omnet_Sims
+### Network Simulations
 
 For large-scale simulations:
 
 1. If you have not already done so, follow **Steps 1–4** in [`Omnet_Sims/README.md`](Omnet_Sims/README.md) to install the simulator and configure the experimental environment.
 2. Follow **Step 6: Running the large-scale simulations and extracting the results** to execute the full experiments and extract their results.
 
-### Benchmark
+### Testbed Experiments
 
 For complete physical-testbed setup and evaluation, refer to the documentation under [`Benchmark/`](Benchmark/) and [`Env_Setup/`](Env_Setup/) that include instructions for:
 
@@ -67,7 +67,7 @@ For complete physical-testbed setup and evaluation, refer to the documentation u
 * Validating PEEL forwarding behavior.
 * Running collective communication benchmarks and collecting performance results.
 
-### FPGA
+### FPGA Implementation
 
 Refer to [`FPGA/README.md`](FPGA/README.md) for instructions on:
 
