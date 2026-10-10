@@ -102,7 +102,7 @@ The commands above download the distribution files for the sample simulations an
 
 Because the sample experiment simulates only a single Broadcast operation, each scenario should complete in less than two minutes. After running the commands above, the Collective Completion Time (CCT) results for all evaluated techniques will be stored in: ```PEEL/Omnet_Sims/dc_simulations/simulations/sims/extracted_results/archive```. Also, the figures are plotted and stored in ```PEEL/Omnet_Sims/dc_simulations/simulations/sims/extracted_results/figs```.
 
-The output should look similar to the following:
+The output should look _similar_ to the following:
 
 ```
 
@@ -119,7 +119,7 @@ mcast_bcast_orca
 Mean CCT (s): 0.00080
 
 mcast_bcast_elmo
-Mean CCT (s): 0.00087
+Mean CCT (s): 0.00073
 
 mcast_bcast_peel
 Mean CCT (s): 0.00027
