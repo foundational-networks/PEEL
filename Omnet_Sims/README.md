@@ -110,16 +110,16 @@ ring_bcast
 Mean CCT (s): 0.00140
 
 tree_bcast
-Mean CCT (s): 0.00476
+Mean CCT (s): 0.0044
 
 mcast_optimal_bcast
-Mean CCT (s): 0.00017
+Mean CCT (s): 0.00018
 
 mcast_bcast_orca
 Mean CCT (s): 0.00080
 
 mcast_bcast_elmo
-Mean CCT (s): 0.00072
+Mean CCT (s): 0.00087
 
 mcast_bcast_peel
 Mean CCT (s): 0.00027
