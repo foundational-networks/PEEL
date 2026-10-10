@@ -33,7 +33,7 @@ The following instructions are intended for those who want to quickly validate t
 
 To run a small-scale "Hello World" simulation:
 
-1. Follow **Steps 1–4** in [`Omnet_Sims/README.md`](Omnet_Sims/README.md) to install the simulator and set up the experimental environment.
+1. Follow **Steps 1–3** in [`Omnet_Sims/README.md`](Omnet_Sims/README.md) to install the simulator and set up the experimental environment.
 2. Follow the instructions under **Small-scale simulations: Extra step for evaluation in a short time** to run the provided small-scale experiment.
 
 ### Testbed Experiments
