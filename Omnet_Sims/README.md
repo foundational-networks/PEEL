@@ -4,11 +4,10 @@ This repository provides the instructions and files required to run the simulati
 
 * [Step 1: Install dependencies](#step-1-installing-dependencies) (~ 5 minutes)
 * [Step 2: Install Omnet++](#step-2-installing-omnet)  (~ 5 minutes)
-* [Step 3: Clone the repository](#step-3-cloning-the-repository) (~ 5 minutes)
-* [Step 4: Build the project](#step-4-building-the-project) (~ 5 minutes)
-* [Step 5: Run the simulations and extract the results](#small-scale-simulations-extra-step-for-evaluation-in-a-short-time) (This step can take from a few minutes to a few weeks depending on the simulations that you run)
+* [Step 3: Build the project](#step-3-building-the-project) (~ 5 minutes)
+* [Step 4: Run the simulations and extract the results](#small-scale-simulations-extra-step-for-evaluation-in-a-short-time) (This step can take from a few minutes to a few weeks depending on the simulations that you run)
 
-> **Note:** For both the small-scale “Hello World” example and the complete large-scale simulations, follow Steps 1–5 to install the simulator and set up the experimental environment. After completing these steps, you can either run the [small-scale simulation commands](#small-scale-simulations-extra-step-for-evaluation-in-a-short-time) for quick testing or [execute the large-scale simulation files](#step-6-running-the-large-scale-simulations-and-extracting-the-results) for a comprehensive experimentation.
+> **Note:** For both the small-scale “Hello World” example and the complete large-scale simulations, follow Steps 1–5 to install the simulator and set up the experimental environment. After completing these steps, you can either run the [small-scale simulation commands](#small-scale-simulations-extra-step-for-evaluation-in-a-short-time) for quick testing or [execute the large-scale simulation files](#step-4-running-the-large-scale-simulations-and-extracting-the-results) for a comprehensive experimentation.
 
 ---
 
@@ -68,17 +67,7 @@ make
 
 ---
 
-### Step 3: Cloning the repository
-
-To clone the repository, run the following script:
-
-```bash
-git clone https://github.com/foundational-networks/PEEL.git
-```
-
----
-
-### Step 4: Building the project
+### Step 3: Building the project
 
 We have provided a ```build.sh``` shell script to simplify this process. To build the project modules and download the distribution files, run the following script:
 
@@ -141,7 +130,7 @@ The results above show that PEEL achieves performance closest to the optimal mul
 
 ---
 
-### Step 5: Running the large-scale simulations and extracting the results
+### Step 4: Running the large-scale simulations and extracting the results
 
 The config files for large-scale simulations can be used for evaluating various collective operations and algorithms. To run the large-scale simulations under distinct collective algorithms for a specific collective operation, first make sure that you are in the right directory (```PEEL/Omnet_Sims/dc_simulations/simulations/sims```) and then use the following commands to download the distribution files, run the simulations, extract the results, and plot the figures:
 
