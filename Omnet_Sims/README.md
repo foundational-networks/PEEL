@@ -99,7 +99,7 @@ The commands above run the RDMC Broadcast sample and store the results in ```PEE
 For the provided sample configuration, the expected Collective Completion Time (CCT) is approximately:
 
 ```text
-RDMC Broadcast (8 MB): Mean CCT = 6.43 ms, p99 CCT = 6.43 ms
+RDMC Broadcast (8 MB): Mean CCT = 0.001726 s, p99 CCT = 0.001726 ms
 ```
 
 Since the sample contains a single repetition, the mean and p99 CCT are identical.
