@@ -29,7 +29,7 @@ LOOK_AHEAD_LIST = [0]
 
 VERBOSE = False
 
-CATEGORIES = ["ring_bcast", "tree_bcast", "mcast_optimal_bcast", "mcast_bcast_orca", "mcast_bcast_elmo", "mcast_bcast_peel"]
+CATEGORIES = ["rdmc_bcast"]
 
 
 '''
@@ -59,3 +59,4 @@ IS_ALLREDUCE = None
 APPLY_IN_SRC_REDUCE = None
 IS_BROADCAST = None
 IS_REDUCE = None
+RDMC_NUM_BLOCKS = 64
