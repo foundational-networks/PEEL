@@ -58,6 +58,11 @@ class BCastCustomCollectiveMsgPasserInfo
         unsigned long core_cidr_group_member_count = 0;
         int dst_tor_idx = -1;
 
+        //RDMC
+        int rdmc_source_server_id = -1;
+        int rdmc_source_gpu_id = -1;
+        int rdmc_block_num;
+
         BCastCustomCollectiveMsgPasserInfo() {
             this->total_flow_size = 0;
             this->flow_id = 0;

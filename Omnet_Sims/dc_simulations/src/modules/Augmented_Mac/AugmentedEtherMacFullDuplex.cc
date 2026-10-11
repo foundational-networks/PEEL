@@ -94,9 +94,6 @@ void AugmentedEtherMacFullDuplex::initialize(int stage)
             } else if (rate_control_type_str.compare("swift") == 0) {
                 EV << "Using swift" << endl;
                 rate_control_type = swift;
-            } else if (rate_control_type_str.compare("sharp") == 0) {
-                EV << "Using sharp rate control" << endl;
-                rate_control_type = sharp;
             } else
                 throw cRuntimeError("unknown rate_control_type_str");
         } else
@@ -106,14 +103,10 @@ void AugmentedEtherMacFullDuplex::initialize(int stage)
 
         num_gpus = int(par("num_gpus"));
         num_flows_per_ml_query = int(par("num_flows_per_ml_query"));
-        num_servers_under_each_leaf = int(par("num_servers"));
-        use_fattree = bool(par("use_fattree"));
 
         server_module_index = getParentModule()->getParentModule()->getIndex();
 
         measureOOO = bool(par("measureOOO"));
-
-        limit_all_to_all_rate = bool(par("limit_all_to_all_rate"));
 
         if (rate_control_type >= 0) {
             if (rate_control_type == dcqcn) {
@@ -145,8 +138,6 @@ void AugmentedEtherMacFullDuplex::initialize(int stage)
                         swift_fs_range <= 0
                         )
                     throw cRuntimeError("Invalid swift params");
-            } else if (rate_control_type == sharp) {
-                //todo: set the params for ina transport
             }
 
             dcqcn_mtu = par("dcqcn_mtu");
@@ -257,14 +248,6 @@ void AugmentedEtherMacFullDuplex::handleSelfMessage(cMessage *msg)
                 throw cRuntimeError("DCQCN: Unknown message!");
         }
     } else if (rate_control_type == swift) {
-        switch (msg->getKind()) {
-            case CCFlowInfo::CC_SEND:
-                handle_cc_send_timer(msg->par("flow_id").longValue(), msg->par("gpu_idx").longValue());
-                break;
-            default:
-                throw cRuntimeError("Swift: Unknown message!");
-        }
-    } else if (rate_control_type == sharp) {
         switch (msg->getKind()) {
             case CCFlowInfo::CC_SEND:
                 handle_cc_send_timer(msg->par("flow_id").longValue(), msg->par("gpu_idx").longValue());
@@ -388,12 +371,8 @@ void AugmentedEtherMacFullDuplex::startFrameTransmission()
 
             }
 
-            // INA
-            eth_header->setIna_leaf_aggregation_num(payload->getIna_leaf_aggregation_num());
-            eth_header->setIna_spine_aggregation_num(payload->getIna_spine_aggregation_num());
-            eth_header->setIna_core_aggregation_num(payload->getIna_core_aggregation_num());
+            // used for INA
             eth_header->setTree_direction(TREE_UP);
-
             eth_header->setQuery_id(payload->getQuery_id());
             eth_header->setFlow_id(payload->getRequesterID());
             eth_header->setCollective_scale(payload->getCollective_scale());
@@ -403,7 +382,6 @@ void AugmentedEtherMacFullDuplex::startFrameTransmission()
             eth_header->setSrc_gpu_idx(payload->getSrc_gpu_idx());
             eth_header->setIn_src_sharding(payload->getIn_src_sharding());
             eth_header->setUsing_orca(payload->getUsing_orca());
-            eth_header->setUsing_elmo(payload->getUsing_elmo());
             if (rate_control_type == swift)
                 eth_header->setSwift_send_time(simTime());
             if (packet_name.compare("data") == 0 && payload->getSeq_num() <= 0)
@@ -648,6 +626,31 @@ void AugmentedEtherMacFullDuplex::handle_cc_send_timer(unsigned long flow_id, in
         }
     }
 
+    if (flow_id_found_itr->second->algorithm == BCAST_INA) {
+        // don't send if we have enough inflight seqments
+
+        if (aggregator_num == 0)
+            throw cRuntimeError("Invalid aggregator num!!");
+
+        if (flow_id_found_itr->second->query_id == 0)
+            throw cRuntimeError("Invalid query ID...");
+        auto queryid_found_itr = queryid_to_seqnum_map.find(flow_id_found_itr->second->query_id);
+        if (queryid_found_itr == queryid_to_seqnum_map.end())
+            throw cRuntimeError("query id must be present in queryid_to_seqnum_map");
+
+        if (queryid_found_itr->second.size() > aggregator_num) {
+            std::cout << queryid_found_itr->second.size() << endl;
+            std::cout << aggregator_num << endl;
+            throw cRuntimeError("How is queryid_found_itr->second.size() > aggregator_num2??");
+        }
+        if (queryid_found_itr->second.size() == aggregator_num) {
+            EV << flow_id_found_itr->second->flow_id << ": going to sleep" << endl;
+            cc_cancel_all_timers(flow_id_found_itr->second);
+            return;
+        }
+    }
+
+
     // do not do anything if the port is paused
     if (txQueue->pfc_status == txQueue->PFC_STOP)
         return;
@@ -661,46 +664,6 @@ void AugmentedEtherMacFullDuplex::handle_cc_send_timer(unsigned long flow_id, in
     }
 
     auto packet = flow_id_found_itr->second->packet_list.front();
-
-    if (flow_id_found_itr->second->algorithm == BCAST_INA) {
-        if (rate_control_type != sharp)
-            throw cRuntimeError("BCAST_INA only runs with sharp rate_control_type");
-
-        // get relay unit for the upstream tor
-        int upstream_leaf_idx = int (server_module_index / num_servers_under_each_leaf);
-        auto topo_module = getParentModule()->getParentModule()->getParentModule();
-        std::string relay_path;
-        if (use_fattree) {
-            relay_path = topo_module->getFullPath() +
-                            ".edge[" + std::to_string(upstream_leaf_idx) +
-                            "].relayUnit";
-        } else {
-            relay_path = topo_module->getFullPath() +
-                            ".agg[" + std::to_string(upstream_leaf_idx) +
-                            "].relayUnit";
-        }
-        BouncingIeee8021dRelay* relay_module =
-                check_and_cast<BouncingIeee8021dRelay*>(getModuleByPath(relay_path.c_str()));
-
-        EV << "Upstream tor relay is " << relay_module->getFullPath() << endl;
-
-        auto frame = packet->peekAtFront<EthernetMacHeader>();
-        if (relay_module->ina_has_free_aggregation_pool_spots(frame->getQuery_id(), frame->getSeq_num(),
-                frame->getIna_leaf_aggregation_num(),
-                frame->getIna_spine_aggregation_num(),
-                frame->getIna_core_aggregation_num())) {
-            EV << "Aggregation pool available... Allocating!!" << endl;
-            relay_module->ina_allocate_free_aggregation_pool_spots(frame->getQuery_id(), frame->getSeq_num(),
-                    frame->getIna_leaf_aggregation_num(),
-                    frame->getIna_spine_aggregation_num(),
-                    frame->getIna_core_aggregation_num());
-        } else {
-            EV << "Could not allocate resources!!" << endl;
-            return;
-        }
-    }
-
-
     flow_id_found_itr->second->packet_list.pop_front();
 
     if (rate_control_type == dcqcn) {
@@ -807,13 +770,7 @@ void AugmentedEtherMacFullDuplex::handle_cc_send_timer(unsigned long flow_id, in
 
                 }
             }
-
-            // INA
-            m_eth_header->setIna_leaf_aggregation_num(payload->getIna_leaf_aggregation_num());
-            m_eth_header->setIna_spine_aggregation_num(payload->getIna_spine_aggregation_num());
-            m_eth_header->setIna_core_aggregation_num(payload->getIna_core_aggregation_num());
             m_eth_header->setTree_direction(TREE_UP);
-
             m_eth_header->setQuery_id(payload->getQuery_id());
             m_eth_header->setFlow_id(payload->getRequesterID());
             m_eth_header->setCollective_scale(payload->getCollective_scale());
@@ -823,7 +780,6 @@ void AugmentedEtherMacFullDuplex::handle_cc_send_timer(unsigned long flow_id, in
             m_eth_header->setSrc_gpu_idx(payload->getSrc_gpu_idx());
             m_eth_header->setIn_src_sharding(payload->getIn_src_sharding());
             m_eth_header->setUsing_orca(payload->getUsing_orca());
-            m_eth_header->setUsing_elmo(payload->getUsing_elmo());
             if (rate_control_type == swift)
                 m_eth_header->setSwift_send_time(simTime());
             if (payload->getSeq_num() <= 0)
@@ -1073,13 +1029,7 @@ void AugmentedEtherMacFullDuplex::handle_cc_send_timer(unsigned long flow_id, in
 
                     }
                 }
-
-                // INA
-                m_eth_header->setIna_leaf_aggregation_num(payload->getIna_leaf_aggregation_num());
-                m_eth_header->setIna_spine_aggregation_num(payload->getIna_spine_aggregation_num());
-                m_eth_header->setIna_core_aggregation_num(payload->getIna_core_aggregation_num());
                 m_eth_header->setTree_direction(TREE_UP);
-
                 m_eth_header->setQuery_id(payload->getQuery_id());
                 m_eth_header->setFlow_id(payload->getRequesterID());
                 m_eth_header->setCollective_scale(payload->getCollective_scale());
@@ -1089,7 +1039,6 @@ void AugmentedEtherMacFullDuplex::handle_cc_send_timer(unsigned long flow_id, in
                 m_eth_header->setSrc_gpu_idx(payload->getSrc_gpu_idx());
                 m_eth_header->setIn_src_sharding(payload->getIn_src_sharding());
                 m_eth_header->setUsing_orca(payload->getUsing_orca());
-                m_eth_header->setUsing_elmo(payload->getUsing_elmo());
                 if (rate_control_type == swift)
                     m_eth_header->setSwift_send_time(simTime());
                 if (payload->getSeq_num() <= 0)
@@ -1242,21 +1191,6 @@ double AugmentedEtherMacFullDuplex::get_rate_dividier(int collective, int algori
     if (collective <= 0 || algorithm <= 0)
         throw cRuntimeError("invalid collective or algorithm!");
 
-    // note that for combinational, in_src_reduce for ace is necessarily enabled
-    double m_initial_rate_divider = -1;
-
-    if (collective == ALL_TO_ALL_V) {
-        // All-to-all(v) are not longer done with ace/marc! so set the rate to 1
-        if (limit_all_to_all_rate)
-            m_initial_rate_divider = num_flows_per_ml_query * 1.0;
-        else
-            m_initial_rate_divider = 1;
-        // we don't want to get higher than link rate!
-        if (m_initial_rate_divider < 1.0)
-            throw cRuntimeError("How is m_initial_rate_divider < 1.0!");
-        return m_initial_rate_divider;
-    }
-
     // devider must be more than 1 if we have one collective and alg and less than 0 if we have combined
     if (dcqcn_initial_rate_devider >= 0 && dcqcn_initial_rate_devider <= 1)
         return 1.0;
@@ -1284,7 +1218,7 @@ double AugmentedEtherMacFullDuplex::get_rate_dividier(int collective, int algori
                     throw cRuntimeError("m_initial_rate_divider would become negative!");
                 }
 
-                m_initial_rate_divider = num_flows_per_ml_query * 1.0 / num_gpus;
+                double m_initial_rate_divider = num_flows_per_ml_query * 1.0 / num_gpus;
                 EV << "Changing rate divider to " << m_initial_rate_divider << endl;
                 return m_initial_rate_divider;
             }
@@ -1312,6 +1246,8 @@ double AugmentedEtherMacFullDuplex::get_rate_dividier(int collective, int algori
     if (num_flows_per_ml_query < 0)
         throw cRuntimeError("Invalid num_flows_per_ml_query");
 
+    // note that for combinational, in_src_reduce for ace is necessarily enabled
+    double m_initial_rate_divider = -1;
     switch (collective) {
         case BROADCAST:
             m_initial_rate_divider = 1.0;
@@ -1340,7 +1276,9 @@ double AugmentedEtherMacFullDuplex::get_rate_dividier(int collective, int algori
             m_initial_rate_divider = num_flows_per_ml_query * 1.0 / num_gpus;
             break;
         case ALL_TO_ALL_V:
-            throw cRuntimeError("ALL_TO_ALL_V should have been addressed by now!");
+            // All-to-all(v) are not longer done with ace/marc! so set the rate to 1
+//            m_initial_rate_divider = num_flows_per_ml_query * 1.0;
+            m_initial_rate_divider = 1;
             break;
         default:
             throw cRuntimeError("Unknown collective!");
@@ -1358,6 +1296,41 @@ double AugmentedEtherMacFullDuplex::get_rate_dividier(int collective, int algori
 }
 
 void AugmentedEtherMacFullDuplex::pushPacketToQeueue(Packet *packet) {
+
+    auto packet_dup = packet->dup();
+    packet_dup->setFrontIteratorPosition(b(0));
+    packet_dup->removeAtFront<EthernetMacHeader>();
+    packet_dup->removeAtFront<Ipv4Header>();
+    packet_dup->removeAtFront<UdpHeader>();
+    packet_dup->removeAtBack<EthernetFcs>(ETHER_FCS_BYTES);
+    auto chunk = packet_dup->removeAtFront<SliceChunk>();
+    auto main_chunk = chunk->getChunk();
+    Packet* temp = new Packet();
+    temp->insertAtBack(main_chunk);
+    auto payload = temp->popAtFront<GenericAppMsg>();
+
+    if (payload->getCollective_alg_type() == BCAST_INA) {
+        auto queryid_found_itr = queryid_to_seqnum_map.find(payload->getQuery_id());
+        if (queryid_found_itr == queryid_to_seqnum_map.end()) {
+            std::unordered_set<unsigned long> seqnum_set;
+            queryid_to_seqnum_map.insert(std::make_pair(payload->getQuery_id(), seqnum_set));
+            queryid_found_itr = queryid_to_seqnum_map.find(payload->getQuery_id());
+        }
+
+        queryid_found_itr->second.insert(payload->getSeq_num());
+        EV << "query id: " << payload->getQuery_id() << ", seq num " << payload->getSeq_num() <<
+                " inserted into queryid_to_seqnum_map. Size: " <<
+                queryid_found_itr->second.size() << endl;
+
+        if (queryid_found_itr->second.size() > aggregator_num) {
+            std::cout << payload->getRequesterID() << endl;
+            std::cout << queryid_found_itr->second.size() << endl;
+            std::cout << aggregator_num << endl;
+            throw cRuntimeError("How is queryid_found_itr->second.size() > aggregator_num 3?");
+        }
+    }
+    delete temp;
+    delete packet_dup;
     txQueue->pushPacket(packet);
 }
 
@@ -1440,9 +1413,6 @@ void AugmentedEtherMacFullDuplex::handleUpperPacket(Packet *packet)
         delete temp;
         delete packet_dup;
 
-        if (rate_control_type != sharp && m_collective_alg == BCAST_INA)
-            throw cRuntimeError("BCAST_INA only runs with SHARP rate control!");
-
         auto flow_id_found_itr = flow_id_to_info_mapper.find(gpu_idx_flow_id_tuple);
         if (flow_id_found_itr == flow_id_to_info_mapper.end()) {
             EV << "This is the first packet we are receiving for flow_id: " << flow_id << endl;
@@ -1460,9 +1430,6 @@ void AugmentedEtherMacFullDuplex::handleUpperPacket(Packet *packet)
                 m_flow = new CCFlowInfo(flow_id, init_alpha, init_g, get_link_util(), init_byte_counter,
                         increase_timer_gap, alpha_timer_gap, application_name, application_full_path, src_gpu_idx);
             } else if (rate_control_type == swift) {
-                m_flow = new CCFlowInfo(flow_id, get_link_util(), application_name,
-                        application_full_path, src_gpu_idx);
-            } else if (rate_control_type == sharp) {
                 m_flow = new CCFlowInfo(flow_id, get_link_util(), application_name,
                         application_full_path, src_gpu_idx);
             }
@@ -1492,15 +1459,12 @@ void AugmentedEtherMacFullDuplex::handleUpperPacket(Packet *packet)
                 // don't initialize swift_max_cwnd_pkt_num, swift_cwnd_pkt_num...
                 // they will be initialized later
                 cc_schedule_send_timer(m_flow);
-            } else if (rate_control_type == sharp) {
-                // don't initialize swift_max_cwnd_pkt_num, swift_cwnd_pkt_num...
-                // they will be initialized later
-                cc_schedule_send_timer(m_flow);
             }
         } else {
             EV << "We have information for flow_id: " << flow_id << endl;
             if (!flow_id_found_itr->second->send_timer->isScheduled()) {
-                if (flow_id_found_itr->second->has_more_packets != BATCH_SLEEP)
+                if (flow_id_found_itr->second->algorithm != BCAST_INA &&
+                        flow_id_found_itr->second->has_more_packets != BATCH_SLEEP)
                     throw cRuntimeError("How are we not asleep but the sender timer is not running!");
                 cc_cancel_all_timers(flow_id_found_itr->second);
                 EV << "In sleep mode, re-initiating timers" << endl;
@@ -1509,8 +1473,6 @@ void AugmentedEtherMacFullDuplex::handleUpperPacket(Packet *packet)
                     dcqcn_schedule_alpha_timer(flow_id_found_itr->second);
                     cc_schedule_send_timer(flow_id_found_itr->second);
                 } else if (rate_control_type == swift) {
-                    cc_schedule_send_timer(flow_id_found_itr->second);
-                } else if (rate_control_type == sharp) {
                     cc_schedule_send_timer(flow_id_found_itr->second);
                 }
                 EV << flow_id_found_itr->second->flow_id << ": waking up" << endl;
@@ -1615,13 +1577,7 @@ void AugmentedEtherMacFullDuplex::handleUpperPacket(Packet *packet)
 
                 }
             }
-
-            // INA
-            m_eth_header->setIna_leaf_aggregation_num(payload->getIna_leaf_aggregation_num());
-            m_eth_header->setIna_spine_aggregation_num(payload->getIna_spine_aggregation_num());
-            m_eth_header->setIna_core_aggregation_num(payload->getIna_core_aggregation_num());
             m_eth_header->setTree_direction(TREE_UP);
-
             m_eth_header->setQuery_id(payload->getQuery_id());
             m_eth_header->setFlow_id(payload->getRequesterID());
             m_eth_header->setCollective_scale(payload->getCollective_scale());
@@ -1631,7 +1587,6 @@ void AugmentedEtherMacFullDuplex::handleUpperPacket(Packet *packet)
             m_eth_header->setSrc_gpu_idx(payload->getSrc_gpu_idx());
             m_eth_header->setIn_src_sharding(payload->getIn_src_sharding());
             m_eth_header->setUsing_orca(payload->getUsing_orca());
-            m_eth_header->setUsing_elmo(payload->getUsing_elmo());
             if (rate_control_type == swift)
                 m_eth_header->setSwift_send_time(simTime());
             if (payload->getSeq_num() <= 0)
@@ -1866,13 +1821,7 @@ void AugmentedEtherMacFullDuplex::handleUpperPacket(Packet *packet)
 
                     }
                 }
-
-                // INA
-                m_eth_header->setIna_leaf_aggregation_num(payload->getIna_leaf_aggregation_num());
-                m_eth_header->setIna_spine_aggregation_num(payload->getIna_spine_aggregation_num());
-                m_eth_header->setIna_core_aggregation_num(payload->getIna_core_aggregation_num());
                 m_eth_header->setTree_direction(TREE_UP);
-
                 m_eth_header->setQuery_id(payload->getQuery_id());
                 m_eth_header->setFlow_id(payload->getRequesterID());
                 m_eth_header->setCollective_scale(payload->getCollective_scale());
@@ -1882,7 +1831,6 @@ void AugmentedEtherMacFullDuplex::handleUpperPacket(Packet *packet)
                 m_eth_header->setSrc_gpu_idx(payload->getSrc_gpu_idx());
                 m_eth_header->setIn_src_sharding(payload->getIn_src_sharding());
                 m_eth_header->setUsing_orca(payload->getUsing_orca());
-                m_eth_header->setUsing_elmo(payload->getUsing_elmo());
                 if (rate_control_type == swift)
                     m_eth_header->setSwift_send_time(simTime());
                 if (payload->getSeq_num() <= 0)
@@ -1991,6 +1939,10 @@ void AugmentedEtherMacFullDuplex::dcqcn_generate_congestion_notification(Packet*
     int algorithm_type = payload->getCollective_alg_type();
     int src_gpu_idx = payload->getSrc_gpu_idx();
     delete temp;
+
+    // do not generate CNP for SHArP
+    if (algorithm_type == BCAST_INA)
+        return;
 
     bool should_generate_cnp = false;
     simtime_t now = simTime();
@@ -2656,6 +2608,40 @@ void AugmentedEtherMacFullDuplex::processMsgFromNetwork(EthernetSignal *signal)
                 dcqcn_generate_congestion_notification(packet_dup);
                 delete packet_dup;
             }
+            if (eth_header->getCollective_alg() == BCAST_INA) {
+                // remove seqnum to send more packets into the network
+                unsigned long query_id = eth_header->getQuery_id();
+                unsigned long seqnum = eth_header->getSeq_num();
+
+                auto queryid_found_itr = queryid_to_seqnum_map.find(query_id);
+                if (queryid_found_itr == queryid_to_seqnum_map.end())
+                    throw cRuntimeError("query id must be present in queryid_to_seqnum_map2");
+                unsigned int old_size = queryid_found_itr->second.size();
+                if (old_size > aggregator_num) {
+                    std::cout << queryid_found_itr->second.size() << endl;
+                    std::cout << aggregator_num << endl;
+                    throw cRuntimeError("How is queryid_found_itr->second.size() > aggregator_num1?");
+                }
+                queryid_found_itr->second.erase(seqnum);
+                EV << "query id: " << query_id << ", seq num " << seqnum <<
+                        " erased from queryid_to_seqnum_map. Size: " <<
+                        queryid_found_itr->second.size() << endl;
+                if (old_size == aggregator_num) {
+                    EV << "Waking up every flow from query_id: " << query_id << " that is sleeping..." << endl;
+                    for (auto dcqcn_flow_itr = flow_id_to_info_mapper.begin();
+                            dcqcn_flow_itr != flow_id_to_info_mapper.end();
+                            dcqcn_flow_itr++) {
+                        if (dcqcn_flow_itr->second->query_id == query_id) {
+                            EV << "Waking up flow id " << dcqcn_flow_itr->second->flow_id << endl;
+                            dcqcn_schedule_increase_timer(dcqcn_flow_itr->second);
+                            dcqcn_schedule_alpha_timer(dcqcn_flow_itr->second);
+                            cc_schedule_send_timer(dcqcn_flow_itr->second);
+                            // In INA, there is only one flow per query, you can break after you found it
+                            break;
+                        }
+                    }
+                }
+            }
         } else if (packet_name.find("dcqcn_cnp") != std::string::npos) {
             unsigned long cnp_flow_id = eth_header->getCnp_flow_id();
             int cnp_src_gpu_id = eth_header->getCnp_src_gpu_id();
@@ -2686,8 +2672,6 @@ void AugmentedEtherMacFullDuplex::processMsgFromNetwork(EthernetSignal *signal)
             }
             return;
         }
-    } else if (rate_control_type == sharp) {
-        // todo: impelemnt potential receiver feedbacks for ina
     }
 
     if (frame->getTypeOrLength() == ETHERTYPE_FLOW_CONTROL) {

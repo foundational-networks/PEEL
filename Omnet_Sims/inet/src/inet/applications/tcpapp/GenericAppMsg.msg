@@ -88,10 +88,6 @@ class GenericAppMsg extends FieldsChunk
     int collective_alg_type = -1;
     
     // ina
-    int ina_leaf_aggregation_num = -1;
-    int ina_spine_aggregation_num = -1;
-    int ina_core_aggregation_num = -1;
-    
     unsigned long seq_num = 0; // seq num starts from 1
     unsigned int collective_scale = 0;
     
@@ -123,6 +119,11 @@ class GenericAppMsg extends FieldsChunk
     bool using_elmo = false;
    	int useful_data_bytes = 0;	// only used for specific techniques such as elmo!
    	int elmo_overhead_pop_bytes = 0;	// how much to pop from overhead per multicast tree layer!
+   	
+   	// rdmc params
+   	int rdmc_source_server_id = -1;
+    int rdmc_source_gpu_id = -1;
+    int rdmc_block_number = -1;
 	
 }
 

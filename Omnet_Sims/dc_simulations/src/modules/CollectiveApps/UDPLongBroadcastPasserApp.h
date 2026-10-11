@@ -31,6 +31,7 @@
 #include "unordered_map"
 #include "common/BCastCustomCollectiveMsgPasserInfo.h"
 #include <tuple>
+#include "common/RDMCScheduleInfo.h"
 
 using namespace inet;
 
@@ -50,9 +51,12 @@ class INET_API UDPLongBroadcastPasserApp : public ApplicationBase, public UdpSoc
             bool optireduce_in_reduction_phase = true);
     simtime_t get_intra_host_pass_delay(unsigned long msg_size_bytes);
 
+    void initiate_rdmc_connection(unsigned long qid, int curr_node_num, RDMCScheduleInfo* source_rdmc_schedule);
+    void rdmc_receiver_ready_to_receive(unsigned long qid, int src_server_id, int src_gpu_id, int curr_gpu_id, int receiver_node_id);
+
   protected:
 
-    enum CollectiveAlgTypes { BCAST_SINGLE_SENDER = 1, BCAST_BINOMIAL_TREE, BCAST_BINARY_TREE, BCAST_RING, BCAST_NETWORK_ASSISTED, BCAST_INA, BCAST_OPTIREDUCE, BCAST_PARTIAL_MULTICAST, BCAST_MULTIWRITE};
+    enum CollectiveAlgTypes { BCAST_SINGLE_SENDER = 1, BCAST_BINOMIAL_TREE, BCAST_BINARY_TREE, BCAST_RING, BCAST_NETWORK_ASSISTED, BCAST_INA, BCAST_OPTIREDUCE, BCAST_PARTIAL_MULTICAST, BCAST_RDMC};
     enum CollectiveTypes { ALL_TO_ALL_V = 1, ALL_REDUCE, REDUCE, ALL_GATHER, BROADCAST, REDUCE_SCATTER};
     enum MsgKinds { PASS = 1, FINISH};
     enum BatchingStatus { BATCH_SEND = 1, BATCH_SLEEP, BATCH_TERMINATE };
@@ -67,6 +71,9 @@ class INET_API UDPLongBroadcastPasserApp : public ApplicationBase, public UdpSoc
     int splitted_chunk_size_bytes = -1;
     int splitted_subflow_num = -1;
     int mtu = -1;
+
+    // needed for RDMC
+    cModule* m_network;
 
 //    std::unordered_map<unsigned long, b> flowid_bitsrcvd_mapper;
     // gpu_idx, flow_id --> b
@@ -88,10 +95,6 @@ class INET_API UDPLongBroadcastPasserApp : public ApplicationBase, public UdpSoc
     int nvlink_speed_gbps = -1;
     bool mcast_in_host;
     int num_gpus;
-    int num_servers_under_each_leaf = -1;
-    int fattree_k = -1;
-    int num_spines = -1;
-    int num_leafs = -1;
     // we put things here till the time they are popped
     std::unordered_map<unsigned long, BCastCustomCollectiveMsgPasserInfo*> storage;
     unsigned long storage_id = 1;
@@ -130,18 +133,16 @@ class INET_API UDPLongBroadcastPasserApp : public ApplicationBase, public UdpSoc
 
     bool use_fattree = false;
 
-    // autoccl
-    bool use_autoccl = false;
-    bool autoccl_allreduce_only = false;
-    int num_flows_per_ml_query = 0; // for retrieving the proper flow size!
-    int retrieve_original_flow_size(int m_collective_type,
-            int m_collective_alg, double flow_size);
-
     // maps (src gpu_idx, dst gpu_idx, flow_id) to set of arrived seq nums
     std::map<std::tuple<int, int, unsigned long>, std::set<unsigned long>> arrived_seq_nums_set;
     // set of seq num history (src gpu_idx, dst gpu_idx, flow_id)
     std::set<std::tuple<int, int, unsigned long>> seq_num_complete_flow_history;
 
+    // rdmc
+    int rdmc_num_blocks = 8; // number of blocks ot divide the data into
+    std::map<std::tuple<unsigned long, int, int, int>, RDMCScheduleInfo*> query_src_server_gpu_curr_gpu_map_to_rdmc_schedule;
+    // maps (src gpu_idx, dst gpu_idx, flow_id) to block number that have been received
+    std::map<std::tuple<int, int, unsigned long>, std::list<int> > rdmc_block_nums_history;
 
 
   protected:
@@ -171,10 +172,9 @@ class INET_API UDPLongBroadcastPasserApp : public ApplicationBase, public UdpSoc
     virtual void pass_bcast_binary_tree(BCastCustomCollectiveMsgPasserInfo* record_msg_info);
     int get_num_children(BCastCustomCollectiveMsgPasserInfo* record_msg_info);
     virtual void pass_bcast_ring(BCastCustomCollectiveMsgPasserInfo* record_msg_info);
-    virtual void pass_bcast_multiwrite(Packet* pkt, GenericAppMsg* payload);    // when node is relay
-    virtual void pass_bcast_multiwrite(BCastCustomCollectiveMsgPasserInfo* record_msg_info); // when node is a dst
     virtual void pass_bcast_optireduce(BCastCustomCollectiveMsgPasserInfo* record_msg_info);
     virtual void optireduce_send_next(unsigned long query_id, int src_gpu_idx);
+    void pass_bcast_rdmc(BCastCustomCollectiveMsgPasserInfo* record_msg_info, unsigned long qid = 0, RDMCScheduleInfo* rdmc_schedule = nullptr);
 
     virtual unsigned long insert_msg_storage(BCastCustomCollectiveMsgPasserInfo* msg_info);
     BCastCustomCollectiveMsgPasserInfo* pop_from_storage(unsigned long storage_loc);
@@ -186,6 +186,11 @@ class INET_API UDPLongBroadcastPasserApp : public ApplicationBase, public UdpSoc
     std::map<std::pair<unsigned long, unsigned long>, unsigned long> query_subf_to_pkt_count;
     void optireduce_update_rcvd_subflows();
     bool optireduce_should_pass_subflows();
+
+    void rdmc_send_ready_to_receive(unsigned long qid, RDMCScheduleInfo* rdmc_schedule);
+    void rdmc_complete_block_send(unsigned long qid, int src_server_id, int src_gpu_id, int curr_gpu_id);
+    void rdmc_complete_block_receive(unsigned long qid, int src_server_id, int src_gpu_id, int curr_gpu_id, int rcvd_block_num);
+
   public:
     UDPLongBroadcastPasserApp() {}
     ~UDPLongBroadcastPasserApp();

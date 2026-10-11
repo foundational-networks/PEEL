@@ -183,10 +183,6 @@ inline void doParsimUnpacking(omnetpp::cCommBuffer *b, TwoDInnerList& obj) {obj.
  *     int collective_alg_type = -1;
  * 
  *     // ina
- *     int ina_leaf_aggregation_num = -1;
- *     int ina_spine_aggregation_num = -1;
- *     int ina_core_aggregation_num = -1;
- * 
  *     unsigned long seq_num = 0; // seq num starts from 1
  *     unsigned int collective_scale = 0;
  * 
@@ -218,6 +214,11 @@ inline void doParsimUnpacking(omnetpp::cCommBuffer *b, TwoDInnerList& obj) {obj.
  *     bool using_elmo = false;
  *     int useful_data_bytes = 0;	// only used for specific techniques such as elmo!
  *     int elmo_overhead_pop_bytes = 0;	// how much to pop from overhead per multicast tree layer!
+ * 
+ *     // rdmc params
+ *     int rdmc_source_server_id = -1;
+ *     int rdmc_source_gpu_id = -1;
+ *     int rdmc_block_number = -1;
  * 
  * }
  * </pre>
@@ -263,9 +264,6 @@ class INET_API GenericAppMsg : public ::inet::FieldsChunk
     int tree_traversal_dir = -1;
     int collective_type = -1;
     int collective_alg_type = -1;
-    int ina_leaf_aggregation_num = -1;
-    int ina_spine_aggregation_num = -1;
-    int ina_core_aggregation_num = -1;
     unsigned long seq_num = 0;
     unsigned int collective_scale = 0;
     unsigned int *rsbf_seed_list = nullptr;
@@ -288,6 +286,9 @@ class INET_API GenericAppMsg : public ::inet::FieldsChunk
     bool using_elmo = false;
     int useful_data_bytes = 0;
     int elmo_overhead_pop_bytes = 0;
+    int rdmc_source_server_id = -1;
+    int rdmc_source_gpu_id = -1;
+    int rdmc_block_number = -1;
 
   private:
     void copy(const GenericAppMsg& other);
@@ -413,12 +414,6 @@ class INET_API GenericAppMsg : public ::inet::FieldsChunk
     virtual void setCollective_type(int collective_type);
     virtual int getCollective_alg_type() const;
     virtual void setCollective_alg_type(int collective_alg_type);
-    virtual int getIna_leaf_aggregation_num() const;
-    virtual void setIna_leaf_aggregation_num(int ina_leaf_aggregation_num);
-    virtual int getIna_spine_aggregation_num() const;
-    virtual void setIna_spine_aggregation_num(int ina_spine_aggregation_num);
-    virtual int getIna_core_aggregation_num() const;
-    virtual void setIna_core_aggregation_num(int ina_core_aggregation_num);
     virtual unsigned long getSeq_num() const;
     virtual void setSeq_num(unsigned long seq_num);
     virtual unsigned int getCollective_scale() const;
@@ -469,6 +464,12 @@ class INET_API GenericAppMsg : public ::inet::FieldsChunk
     virtual void setUseful_data_bytes(int useful_data_bytes);
     virtual int getElmo_overhead_pop_bytes() const;
     virtual void setElmo_overhead_pop_bytes(int elmo_overhead_pop_bytes);
+    virtual int getRdmc_source_server_id() const;
+    virtual void setRdmc_source_server_id(int rdmc_source_server_id);
+    virtual int getRdmc_source_gpu_id() const;
+    virtual void setRdmc_source_gpu_id(int rdmc_source_gpu_id);
+    virtual int getRdmc_block_number() const;
+    virtual void setRdmc_block_number(int rdmc_block_number);
 };
 
 inline void doParsimPacking(omnetpp::cCommBuffer *b, const GenericAppMsg& obj) {obj.parsimPack(b);}

@@ -31,63 +31,8 @@
 #include "./UDPLongBroadcastPasserApp.h"
 #include "tuple"
 #include <functional>
-#include <limits>
-#include <cmath>
 
 using namespace inet;
-
-// auto ccl
-
-struct AutoCCLCCTInfo {
-    simtime_t collective_start = 0;
-    simtime_t collective_end = 0;
-    unsigned int flows_completed = 0;
-    unsigned int max_flows_per_collective = 0;
-    int collective_type = -1;
-    int collective_alg_type = -1;
-    unsigned long query_id;
-};
-
-
-
-struct AutoCCLPlacementSig {
-    int numHosts = 0;
-    int numLeafsTouched = 0;
-    int maxGPUsPerHost = 0;
-    int maxHostsPerLeaf = 0;
-
-    bool operator<(const AutoCCLPlacementSig& other) const {
-        return std::tie(numHosts, numLeafsTouched, maxGPUsPerHost, maxHostsPerLeaf) <
-               std::tie(other.numHosts, other.numLeafsTouched, other.maxGPUsPerHost, other.maxHostsPerLeaf);
-    }
-};
-
-struct AutoCCLTaskKey {
-    int opType = 0; // broadcast, all-gather, all-reduce
-    int sizeBin = 0;
-    int groupSizeBin = 0;
-    AutoCCLPlacementSig placement;
-    int loadBin = 0;
-
-    bool operator<(const AutoCCLTaskKey& other) const {
-        return std::tie(opType, sizeBin, groupSizeBin, placement, loadBin) <
-               std::tie(other.opType, other.sizeBin, other.groupSizeBin, other.placement, other.loadBin);
-    }
-};
-
-struct AutoCCLAlgoStats {
-    int trials = 0;
-    double meanCCT = 0.0;
-    double meanBytes = 0.0;
-    double bestCCT = std::numeric_limits<double>::infinity();
-};
-
-struct AutoCCLSelectorState {
-    AutoCCLAlgoStats ring;
-    AutoCCLAlgoStats tree;
-    int bestAlgo = -1;
-    int occurrences = 0;
-};
 
 
 /**
@@ -134,13 +79,15 @@ class INET_API UDPLongAllgatherInitiatorApp : public ApplicationBase, public Udp
             int trie_type);
     enum TrieType { CIDR_AGG = 1, CIDR_CORE};
 
+    void rdmc_receiver_ready_to_receive(unsigned long qid, int src_server_id, int src_gpu_id, int receiver_node_id);
+
   protected:
 
     enum BatchingStatus { BATCH_SEND = 1, BATCH_SLEEP, BATCH_TERMINATE };
     enum SelfMsgKinds { SEND = 1, STOP};
     enum TreeSearchType { TREE_LOW = 1, TREE_HIGH };
     enum TreeTraversalType { TREE_UP = 1, TREE_DOWN };
-    enum CollectiveAlgTypes { BCAST_SINGLE_SENDER = 1, BCAST_BINOMIAL_TREE, BCAST_BINARY_TREE, BCAST_RING, BCAST_NETWORK_ASSISTED, BCAST_INA, BCAST_OPTIREDUCE, BCAST_PARTIAL_MULTICAST, BCAST_MULTIWRITE};
+    enum CollectiveAlgTypes { BCAST_SINGLE_SENDER = 1, BCAST_BINOMIAL_TREE, BCAST_BINARY_TREE, BCAST_RING, BCAST_NETWORK_ASSISTED, BCAST_INA, BCAST_OPTIREDUCE, BCAST_PARTIAL_MULTICAST, BCAST_RDMC};
     enum CollectiveTypes { ALL_TO_ALL_V = 1, ALL_REDUCE, REDUCE, ALL_GATHER, BROADCAST, REDUCE_SCATTER};
     enum LBGranularity {LB_FLOW = 1, LB_PKT};
     // random or round-robin
@@ -153,6 +100,9 @@ class INET_API UDPLongAllgatherInitiatorApp : public ApplicationBase, public Udp
     // tells us what the collective is from Collectives enum
     int collective_type = -1;
     int collective_alg_type = -1;
+
+    // needed for RDMC
+    cModule* m_network;
 
     // Extra info
 //    std::map<UdpSocket*, int> socket_to_destination_mapper; // maps a socket to a server_idx
@@ -231,11 +181,11 @@ class INET_API UDPLongAllgatherInitiatorApp : public ApplicationBase, public Udp
     std::unordered_map<int, std::list<unsigned int>> hash_seeds_map;    // maps src gpu idx to list of seeds
     std::map<std::pair<unsigned long, int>, std::list<unsigned int>> bit_string_map;    // maps <query, src gpu> to the bit strings
     unsigned int rsbf_overhead = 0;
-    // elmo
-    bool use_elmo = false;
-    unsigned int elmo_per_pkt_overhead_bytes = 0;
-    unsigned int elmo_overhead_pop_bytes = 0;
-    void compute_elmo_perpkt_overhead();
+
+    // rdmc
+    int rdmc_num_blocks = 4; // number of blocks ot divide the data into
+    bool rdmc_hierarchical = false;
+    std::map<std::tuple<unsigned long, int, int>, RDMCScheduleInfo*> query_node_map_to_rdmc_schedule;
 
     bool use_fattree = false;
     int fattree_k = -1;
@@ -323,7 +273,7 @@ class INET_API UDPLongAllgatherInitiatorApp : public ApplicationBase, public Udp
     virtual simtime_t get_inter_arrival_time();
     virtual int get_flow_size(int m_collective_type, int m_collective_alg);
     virtual int get_collective_type();
-    int get_collective_alg(int collective_type, unsigned long query_id);
+    int get_collective_alg();
     virtual int get_dst_server_idx();
     int get_dst_gpu_idx();
     virtual int get_dst_server_num_per_query(int m_collective_alg);
@@ -332,44 +282,12 @@ class INET_API UDPLongAllgatherInitiatorApp : public ApplicationBase, public Udp
     virtual std::list<port_list> get_ports_to_dst_list();
     virtual std::list<port_list> get_jump_to_idx_list();
 
-
-
-    // autoccl
-    // -------------------------
-
-    static std::map<AutoCCLTaskKey, AutoCCLSelectorState> autoccl_table;
-    static std::map<unsigned long, AutoCCLCCTInfo> autoccl_cct_tracker;
-    static std::map<unsigned long, AutoCCLTaskKey> autoccl_queryid_to_key_mapper;
-    static std::map<unsigned long, int> autoccl_queryid_to_collective_alg_mapper;
-    static std::set<unsigned long> query_alg_restored;
-//    static int rr_idx;
-
-    AutoCCLTaskKey autoccl_build_task_key(int collective_type);
-    int autoccl_update_collective_alg(int collective_type, unsigned long query_id);
-    int autoccl_size_bin(uint64_t bytes);
-    int autoccl_group_size_bin(int groupSize);
-    AutoCCLPlacementSig autoccl_build_placement_sig();
-    int autoccl_pick_better_alg(AutoCCLSelectorState& st);
-    int autoccl_other_alg(int alg);
-    bool use_autoccl = false;
-    bool autoccl_allreduce_only = false;
-
-    void instantiate_autoccl_cct_info(bool autoccl_used,
-            int collective_type,
-            int collective_alg_type,
-            unsigned long query_id);
-
-    // -------------------------
-
-
-
     Packet* create_packet(std::string pkt_name,
             B pkt_size,
             unsigned long seq_num,
             AllgatherCustomCollectiveMsgInitiatorInfo* msg_info,
             int src_gpu_idx,
             int dst_gpu_idx,
-            unsigned int useful_data,   // the actual data that is in the payload (not considering the overhead)
             int init_tree_pkt_idx = -1,
             unsigned long remaining_bytes = 0);
     virtual void send_msg(int server_idx,
@@ -381,17 +299,17 @@ class INET_API UDPLongAllgatherInitiatorApp : public ApplicationBase, public Udp
     virtual int get_local_port();
     virtual void init_socket(int server_idx, int gpu_idx);
     virtual L3Address get_destination(int server_idx, int gpu_idx);
-    virtual void snd_allgather_single_sender(int collective_type, unsigned long query_id);
+    virtual void snd_allgather_single_sender();
     virtual int find_parent(int size, int search_type, int element_idx_in_list, bool just_leafs = false);
-    virtual void snd_allgather_binary_tree(int collective_type, unsigned long query_id);
-    virtual void snd_allgather_binomial_tree(int collective_type, unsigned long query_id);
-    virtual void snd_allgather_ring(int collective_type, unsigned long query_id);
-    void snd_allgather_multiwrite(int collective_type, unsigned long query_id);
+    virtual void snd_allgather_binary_tree();
+    virtual void snd_allgather_binomial_tree();
+    virtual void snd_allgather_ring();
     virtual void optireduce_send_next(unsigned long query_id, int src_gpu_idx);
-    virtual void snd_allgather_optireduce(int collective_type, unsigned long query_id);
-    virtual void snd_allgather_network_assisted(int collective_type, unsigned long query_id);
-    virtual void snd_allgather_partial_mcast(int collective_type, unsigned long query_id);
-    virtual void snd_allgather_ina(int collective_type, unsigned long query_id);
+    virtual void snd_allgather_optireduce();
+    virtual void snd_allgather_network_assisted();
+    virtual void snd_allgather_partial_mcast();
+    virtual void snd_allgather_ina();
+    void snd_allgather_rdmc(unsigned long qid = 0, RDMCScheduleInfo* rsche = nullptr);
     virtual int get_random_gpu_idx();
 //    virtual void filter_out_self_data();
     simtime_t get_intra_host_pass_delay(unsigned long msg_size_bytes);
@@ -402,11 +320,11 @@ class INET_API UDPLongAllgatherInitiatorApp : public ApplicationBase, public Udp
         return h1 ^ (static_cast<std::size_t>(seed) + 0x9e3779b9 + (h1 << 6) + (h1 >> 2));
     }
 
-    double get_controller_delay(bool using_orca, bool using_elmo, bool is_onetime_generation = false);
+    double get_controller_delay(bool using_orca, bool is_onetime_generation = false);
 
-    unsigned int get_orca_per_pkt_overhead_bytes();
+    void initiate_rdmc_connection(unsigned long qid, RDMCScheduleInfo* rdmc_schedule);
+    void rdmc_complete_block_send(unsigned long qid, int src_server_id, int src_gpu_id);
 
-    std::tuple<int, int, int> get_aggregation_msg_number(std::list<int> dst_servers_excluding_src);
 
 
   public:
@@ -420,16 +338,6 @@ class INET_API UDPLongAllgatherInitiatorApp : public ApplicationBase, public Udp
     static simsignal_t flowStartedCollectiveTypeSignal;
     static simsignal_t flowStartedCollectiveAlgSignal;
     static simsignal_t controllerDelaySignal;
-    static simsignal_t autocclChosenCollectiveAlgSignal;
-    static simsignal_t autocclChosenCollectiveSignal;
-
-    // autoccl
-    static void autoccl_inject_flow_finish(bool autoccl_used,
-            bool autoccl_is_for_allreduce_only,
-            int collective_type,
-            int collective_alg_type,
-            unsigned long query_id,
-            unsigned long m_flow_size);
 };
 
 

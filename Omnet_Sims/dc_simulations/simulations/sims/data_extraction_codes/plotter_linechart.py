@@ -195,6 +195,8 @@ def plot_metric(
             translated_category = 'Optireduce'
         elif 'sharp' in category:
             translated_category = 'SHArP'
+        elif 'rdmc' in category:
+            translated_category = 'RDMC'
 
         ax.plot(
             x,

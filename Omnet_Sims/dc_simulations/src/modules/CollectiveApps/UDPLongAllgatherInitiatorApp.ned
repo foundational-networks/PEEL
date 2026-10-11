@@ -134,9 +134,6 @@ simple UDPLongAllgatherInitiatorApp like IApp
         string rsbf_bytes = default("0,0,0");
     	int rsbf_hash_num = default(0);
         
-        // elmo
-        bool use_elmo = default(false);
-        
         bool use_fattree = default(false);
         int k = default(-1);
         
@@ -168,9 +165,8 @@ simple UDPLongAllgatherInitiatorApp like IApp
 
         double random_fail_prob = default(-1);
         
-        // autoccl
-        bool use_autoccl = default(false);
-    	bool autoccl_allreduce_only = default(false);
+        int rdmc_num_blocks = default(3);
+        bool rdmc_hierarchical = default(false);
         
         @signal[requestSent]();
         @signal[flowNum]();
@@ -179,8 +175,6 @@ simple UDPLongAllgatherInitiatorApp like IApp
         @signal[controllerDelay]();
         @signal[flowStartedCollectiveType]();
         @signal[flowStartedCollectiveAlg]();
-        @signal[autocclChosenCollectiveAlg]();
-        @signal[autocclChosenCollective]();
         
         @statistic[requestSentRequesterID](title="request sent requester id"; source="requestSent"; record=vector; interpolationmode=none);
         @statistic[flowNumPerQuery](title="Number of flows per ml query"; source="flowNum"; record=vector; interpolationmode=none);
@@ -189,8 +183,6 @@ simple UDPLongAllgatherInitiatorApp like IApp
         @statistic[flowStartCollectiveType](title="flow started collective type"; source="flowStartedCollectiveType"; record=vector; interpolationmode=none);
         @statistic[flowStartCollectiveAlg](title="flow started collective algorithm"; source="flowStartedCollectiveAlg"; record=vector; interpolationmode=none);
         @statistic[controllerDelay](title="Orca's controller delay"; source="controllerDelay"; record=vector; interpolationmode=none);
-        @statistic[autocclChosenCollectiveAlg](title="AutoCCL's chosen collective algorithms"; source="autocclChosenCollectiveAlg"; record=vector; interpolationmode=none);
-        @statistic[autocclChosenCollective](title="AutoCCL's chosen collective"; source="autocclChosenCollective"; record=vector; interpolationmode=none);
     gates:
         input socketIn @labels(TcpCommand/up);
         output socketOut @labels(TcpCommand/down);

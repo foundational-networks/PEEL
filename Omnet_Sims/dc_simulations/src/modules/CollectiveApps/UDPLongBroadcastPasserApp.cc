@@ -119,15 +119,11 @@ void UDPLongBroadcastPasserApp::initialize(int stage)
         mss = par("mss");
         packet_creation_batch_size = par("packet_creation_batch_size");
 
+        m_network = getSystemModule();
+
         nvlink_speed_gbps = int(par("nvlink_speed_gbps"));
         num_gpus = int(par("num_gpus"));
         mcast_in_host = bool(par("mcast_in_host"));
-
-        num_servers_under_each_leaf = int(getAncestorPar("num_servers"));
-        fattree_k = int(par("k"));
-        num_spines = int(par("num_spines"));
-        num_leafs = int(par("num_aggs"));
-
 
 //        processing_delay = par("processing_delay");
         processing_delay_mean = par("processing_delay_mean");
@@ -175,15 +171,6 @@ void UDPLongBroadcastPasserApp::initialize(int stage)
 
         use_fattree = bool(par("use_fattree"));
 
-        // autoccl
-        use_autoccl = bool(par("use_autoccl"));
-        if (use_autoccl) {
-            num_flows_per_ml_query = par("num_flows_per_ml_query");
-            autoccl_allreduce_only = bool(par("autoccl_allreduce_only"));
-            if (num_flows_per_ml_query <= 0)
-                throw cRuntimeError("Invalid num_flows_per_ml_query for autoccl's use!");
-        }
-
     } else if (stage == INITSTAGE_APPLICATION_LAYER) {
         const char *localAddress = par("localAddress");
         int localPort = par("localPort");
@@ -191,45 +178,6 @@ void UDPLongBroadcastPasserApp::initialize(int stage)
         socket.bind(localPort);
         socket.setCallback(this);
     }
-}
-
-int UDPLongBroadcastPasserApp::retrieve_original_flow_size(int m_collective_type,
-        int m_collective_alg,
-        double flow_size) {
-
-    if (!use_autoccl)
-        throw cRuntimeError("retrieve_original_flow_size called while autoccl is off!");
-
-    if (m_collective_type <= 0 || m_collective_alg <= 0)
-        throw cRuntimeError("Invalid collective type or alg!");
-
-
-    if (m_collective_type != BROADCAST &&
-            m_collective_type != ALL_GATHER &&
-            m_collective_type != ALL_REDUCE)
-        // we don't care about other collectives in autoccl for now
-        throw cRuntimeError("retrieve_original_flow_size called with wrong collective type!");
-
-    if (m_collective_alg != BCAST_RING && m_collective_alg != BCAST_BINARY_TREE)
-        throw cRuntimeError("retrieve_original_flow_size called with wrong collective algorithm!");
-
-
-    /*
-     * In all reduce, we have N gpus each having flow_size chunks of data
-     * assume each have N different chunks of data
-     * at the end we want all corresponding chunks to be reduced
-     * and also available at all nodes
-     */
-    if (m_collective_type == ALL_REDUCE &&
-            (m_collective_alg == BCAST_RING ||
-                    m_collective_alg == BCAST_OPTIREDUCE)) {
-        // at ring each sender starts the broadcast for only one shard
-//        std::cout << "Flow size retreived form " << flow_size << "B to " << flow_size * num_flows_per_ml_query << "B." << std::endl;
-        return flow_size * num_flows_per_ml_query;
-    }
-
-//    std::cout << "Retrieved flow size remains the same: " << flow_size << "B" << std::endl;
-    return flow_size;
 }
 
 void UDPLongBroadcastPasserApp::handleStartOperation(LifecycleOperation *operation)
@@ -375,6 +323,11 @@ int UDPLongBroadcastPasserApp::generate_next_batch(unsigned long flow_id, int gp
         payload->setCollective_scale(msg_info_found_itr->second->num_dsts);
         payload->setOptireduce_in_reduction_phase(msg_info_found_itr->second->optireduce_in_reduction_phase);
 
+        // rdmc params
+        payload->setRdmc_source_server_id(msg_info_found_itr->second->rdmc_source_server_id);
+        payload->setRdmc_source_gpu_id(msg_info_found_itr->second->rdmc_source_gpu_id);
+        payload->setRdmc_block_number(msg_info_found_itr->second->rdmc_block_num);
+
         if (msg_info_found_itr->second->responsibility.size() > 0) {
             for (auto it = msg_info_found_itr->second->responsibility.begin();
                     it != msg_info_found_itr->second->responsibility.end(); it++)
@@ -467,10 +420,15 @@ int UDPLongBroadcastPasserApp::generate_next_batch(unsigned long flow_id, int gp
         unsigned long query_id = msg_info_found_itr->second->query_id;
         int collective_alg = msg_info_found_itr->second->m_collective_alg;
         int src_gpu_idx = msg_info_found_itr->second->src_gpu;
+        int rdmc_src_server_id = msg_info_found_itr->second->rdmc_source_server_id;
+        int rdmc_src_gpu_id = msg_info_found_itr->second->rdmc_source_gpu_id;
         delete msg_info_found_itr->second;
         flowid_passingmsg_mapper.erase(msg_info_found_itr);
         if (collective_alg == BCAST_OPTIREDUCE) {
             optireduce_send_next(query_id, src_gpu_idx);
+        }
+        if (collective_alg == BCAST_RDMC) {
+            rdmc_complete_block_send(query_id, rdmc_src_server_id, rdmc_src_gpu_id, src_gpu_idx);
         }
         return BATCH_TERMINATE;
     }
@@ -591,6 +549,11 @@ void UDPLongBroadcastPasserApp::pass_msg(int server_idx, BCastCustomCollectiveMs
 
         payload->setCollective_scale(msg_info->num_dsts);
         payload->setOptireduce_in_reduction_phase(msg_info->optireduce_in_reduction_phase);
+
+        // rdmc params
+        payload->setRdmc_source_server_id(msg_info->rdmc_source_server_id);
+        payload->setRdmc_source_gpu_id(msg_info->rdmc_source_gpu_id);
+        payload->setRdmc_block_number(msg_info->rdmc_block_num);
 
         if (msg_info->responsibility.size() > 0) {
             for (auto it = msg_info->responsibility.begin(); it != msg_info->responsibility.end(); it++)
@@ -1236,6 +1199,285 @@ void UDPLongBroadcastPasserApp::pass_bcast_binary_tree(BCastCustomCollectiveMsgP
     delete[] dst_server_flow_ids_list;
     dst_server_flow_ids_list = nullptr;
 }
+
+void UDPLongBroadcastPasserApp::initiate_rdmc_connection(unsigned long qid, int curr_node_num, RDMCScheduleInfo* source_rdmc_schedule) {
+    Enter_Method("initiate_rdmc_connection");
+    EV << "UDPLongBroadcastPasserApp::initiate_rdmc_connection" << endl;
+    RDMCScheduleInfo* rdmc_schedule = new RDMCScheduleInfo(source_rdmc_schedule->num_nodes,
+        source_rdmc_schedule->num_blocks, source_rdmc_schedule->flow_size, curr_node_num, source_rdmc_schedule->m_collective_type);
+
+    for (int i = 0; i < source_rdmc_schedule->num_nodes; i++) {
+        rdmc_schedule->dst_servers_list[i] = source_rdmc_schedule->dst_servers_list[i];
+        rdmc_schedule->dst_gpus_list[i] = source_rdmc_schedule->dst_gpus_list[i];
+        rdmc_schedule->flow_ids_list[i] = source_rdmc_schedule->flow_ids_list[i];
+    }
+
+    rdmc_schedule->hierarchical = source_rdmc_schedule->hierarchical;
+    if (rdmc_schedule->hierarchical) {
+        for (auto &intra_itr : source_rdmc_schedule->intra_server_gpus) {
+            rdmc_schedule->intra_server_gpus[intra_itr.first] = intra_itr.second;
+        }
+    }
+
+    int rdmc_src_server_id = rdmc_schedule->dst_servers_list[0];
+    int rdmc_src_gpu_id = rdmc_schedule->dst_gpus_list[0];
+    int curr_gpu_id = rdmc_schedule->dst_gpus_list[curr_node_num];
+    EV << "Server: " << parent_index << " - Adding query tuple to rdmc schedule map: " << qid << ", " << rdmc_src_server_id << ", " << rdmc_src_gpu_id << ", " << curr_gpu_id << endl;
+    query_src_server_gpu_curr_gpu_map_to_rdmc_schedule.insert(std::make_pair(std::make_tuple(qid, rdmc_src_server_id, rdmc_src_gpu_id, curr_gpu_id), rdmc_schedule));
+
+    // send ready to receive to the first block since it is already loaded in receive schedule
+    rdmc_send_ready_to_receive(qid, rdmc_schedule);
+}
+
+
+void UDPLongBroadcastPasserApp::rdmc_send_ready_to_receive(unsigned long qid, RDMCScheduleInfo* rdmc_schedule) {
+    Enter_Method("rdmc_send_ready_to_receive");
+    EV << "UDPLongBroadcastPasserApp::rdmc_send_ready_to_receive" << endl;
+    int target_server_id = rdmc_schedule->dst_servers_list[rdmc_schedule->receive_schedule->target_node];
+    int target_gpu_id = rdmc_schedule->dst_gpus_list[rdmc_schedule->receive_schedule->target_node];
+    int src_server_id = rdmc_schedule->dst_servers_list[0];
+    int src_gpu_id = rdmc_schedule->dst_gpus_list[0];
+    if (rdmc_schedule->receive_schedule->target_node == 0) {
+        UDPLongAllgatherInitiatorApp* target_app = check_and_cast<UDPLongAllgatherInitiatorApp*>(m_network->getSubmodule("server", target_server_id)->getSubmodule("app", 1));
+        target_app->rdmc_receiver_ready_to_receive(qid, src_server_id, src_gpu_id, rdmc_schedule->rdmc_node_id);
+    }
+    else {
+        UDPLongBroadcastPasserApp* target_app = check_and_cast<UDPLongBroadcastPasserApp*>(m_network->getSubmodule("server", target_server_id)->getSubmodule("app", 0));
+        target_app->rdmc_receiver_ready_to_receive(qid, src_server_id, src_gpu_id, target_gpu_id, rdmc_schedule->rdmc_node_id);
+    }
+}
+
+void UDPLongBroadcastPasserApp::rdmc_receiver_ready_to_receive(unsigned long qid, int src_server_id, int src_gpu_id, int curr_gpu_id, int receiver_node_id) {
+    Enter_Method("rdmc_receiver_ready_to_receive");
+    EV << "UDPLongBroadcastPasserApp::rdmc_receiver_ready_to_receive" << endl;
+    auto rdmc_schedule_it = query_src_server_gpu_curr_gpu_map_to_rdmc_schedule.find(std::make_tuple(qid, src_server_id, src_gpu_id, curr_gpu_id));
+    if (rdmc_schedule_it == query_src_server_gpu_curr_gpu_map_to_rdmc_schedule.end()) {
+        EV << "Missing tuple from map: " << qid << ", " << src_server_id << ", " << src_gpu_id << ", " << curr_gpu_id << endl;
+        throw cRuntimeError("RDMC context for query not found! (1)");
+    }
+
+    rdmc_schedule_it->second->ready_to_receive[receiver_node_id] = true;
+    if (rdmc_schedule_it->second->send_schedule != nullptr && !rdmc_schedule_it->second->sending) {
+        EV << "node " << rdmc_schedule_it->second->rdmc_node_id << "triggering block send" << endl;
+        pass_bcast_rdmc(nullptr, qid, rdmc_schedule_it->second);
+    }
+}
+
+void UDPLongBroadcastPasserApp::rdmc_complete_block_send(unsigned long qid, int src_server_id, int src_gpu_id, int curr_gpu_id) {
+    EV << "UDPLongBroadcastPasserApp::rdmc_complete_block_send for sender " << curr_gpu_id << endl;
+    auto rdmc_schedule_it = query_src_server_gpu_curr_gpu_map_to_rdmc_schedule.find(std::make_tuple(qid, src_server_id, src_gpu_id, curr_gpu_id));
+    if (rdmc_schedule_it == query_src_server_gpu_curr_gpu_map_to_rdmc_schedule.end()) {
+        EV << "Missing tuple from map: " << qid << ", " << src_server_id << ", " << src_gpu_id << ", " << curr_gpu_id << endl;
+        throw cRuntimeError("RDMC context for query not found! (2)");
+    }
+
+    RDMCScheduleInfo* rdmc_schedule = rdmc_schedule_it->second;
+//    std::cout <<"node "<<rdmc_schedule->rdmc_node_id<< " (step "<<rdmc_schedule->send_step<<") - finished sending block " << rdmc_schedule->send_schedule->target_block_num << " to node " << rdmc_schedule->send_schedule->target_node << endl;
+    rdmc_schedule->sending = false;
+    delete rdmc_schedule->send_schedule;
+    rdmc_schedule->send_schedule = nullptr;
+
+    while(rdmc_schedule->send_schedule == nullptr && rdmc_schedule->send_step < rdmc_schedule->get_total_steps()) {
+        rdmc_schedule->send_step++;
+        rdmc_schedule->load_outgoing_schedule();
+    }
+    
+    if (rdmc_schedule->send_step == rdmc_schedule->get_total_steps()) {
+        // we have reached the end of the send pipeline, no more data to send
+        EV <<"node " << rdmc_schedule->rdmc_node_id << "Reached the end of binomial pipeline (snd)" << endl;
+        // cleanup if needed
+        if (rdmc_schedule->receive_step == rdmc_schedule->get_total_steps()) {
+            delete rdmc_schedule;
+            query_src_server_gpu_curr_gpu_map_to_rdmc_schedule.erase(rdmc_schedule_it);
+        }
+        return;
+    }
+
+    pass_bcast_rdmc(nullptr, qid, rdmc_schedule);
+}
+
+void UDPLongBroadcastPasserApp::rdmc_complete_block_receive(unsigned long qid, int src_server_id, int src_gpu_id, int curr_gpu_id, int rcvd_block_num) {
+    EV << "UDPLongBroadcastPasserApp::rdmc_complete_block_receive for receiver " << curr_gpu_id << endl;
+    auto rdmc_schedule_it = query_src_server_gpu_curr_gpu_map_to_rdmc_schedule.find(std::make_tuple(qid, src_server_id, src_gpu_id, curr_gpu_id));
+    if (rdmc_schedule_it == query_src_server_gpu_curr_gpu_map_to_rdmc_schedule.end()) {
+        EV << "Missing tuple from map: " << qid << ", " << src_server_id << ", " << src_gpu_id << ", " << curr_gpu_id << endl;
+        throw cRuntimeError("RDMC context for query not found! (3)");
+    }
+
+    RDMCScheduleInfo* rdmc_schedule = rdmc_schedule_it->second;
+//    std::cout<<"node "<<rdmc_schedule->rdmc_node_id<< " (step "<<rdmc_schedule->receive_step<<") - finished receiving block " << rdmc_schedule->receive_schedule->target_block_num << " from node " << rdmc_schedule->receive_schedule->target_node << endl;
+
+    rdmc_schedule->received_block[rcvd_block_num] = true;
+    delete rdmc_schedule->receive_schedule;
+    rdmc_schedule->receive_schedule = nullptr;
+
+    while(rdmc_schedule->receive_schedule == nullptr && rdmc_schedule->receive_step < rdmc_schedule->get_total_steps()) {
+        rdmc_schedule->receive_step++;
+        rdmc_schedule->load_incoming_schedule();
+    }
+    
+    if (rdmc_schedule->receive_step == rdmc_schedule->get_total_steps()) {
+        // we have reached the end of the pipeline, no more data to send
+        EV <<"node "<<rdmc_schedule->rdmc_node_id << "Reached the end of binomial pipeline (rcv)" << endl;
+        // cleanup if needed
+        if (rdmc_schedule->send_step == rdmc_schedule->get_total_steps()) {
+            delete rdmc_schedule;
+            query_src_server_gpu_curr_gpu_map_to_rdmc_schedule.erase(rdmc_schedule_it);
+        }
+        return;
+    }
+
+    // This is where we send the ready to receive to the node we are expected to receive from next
+    rdmc_send_ready_to_receive(qid, rdmc_schedule);
+}
+
+void UDPLongBroadcastPasserApp::pass_bcast_rdmc(BCastCustomCollectiveMsgPasserInfo* record_msg_info, unsigned long qid, RDMCScheduleInfo* rdmc_schedule) {
+    EV << "UDPLongBroadcastPasserApp::pass_bcast_rdmc" << endl;
+
+    unsigned long query_id;
+    int rdmc_src_server_id;
+    int rdmc_src_gpu_id;
+    int curr_gpu_id;
+    unsigned long flow_size;
+
+    if (rdmc_schedule == nullptr) {
+        if (record_msg_info == nullptr)
+            throw cRuntimeError("record_msg_info can not be null if rdmc_schedule is not passed!");
+
+        query_id = record_msg_info->query_id;
+        unsigned long num_dsts = record_msg_info->num_dsts;
+        flow_size = record_msg_info->msg_size;
+
+        if (num_dsts == 0)
+                throw cRuntimeError("How is num_dsts == 0 in pass_bcast_rdmc");
+
+        emit(flowPassedSignal, record_msg_info->flow_id);
+
+        rdmc_src_server_id = record_msg_info->rdmc_source_server_id;
+        rdmc_src_gpu_id = record_msg_info->rdmc_source_gpu_id;
+        curr_gpu_id = record_msg_info->src_gpu;
+
+        // load rdmc schedule since it was called due to receiving pass message
+        auto rdmc_schedule_it = query_src_server_gpu_curr_gpu_map_to_rdmc_schedule.find(std::make_tuple(query_id, rdmc_src_server_id, rdmc_src_gpu_id, curr_gpu_id));
+        if (rdmc_schedule_it == query_src_server_gpu_curr_gpu_map_to_rdmc_schedule.end()) {
+            EV << "RDMC schedule already finished and cleaned up! : " << query_id << ", " << rdmc_src_server_id << ", " << rdmc_src_gpu_id << ", " << curr_gpu_id << endl;
+            return;
+        }
+
+        rdmc_schedule = rdmc_schedule_it->second;
+        if (rdmc_schedule->send_schedule != nullptr) rdmc_schedule->load_outgoing_schedule();
+
+        while(rdmc_schedule->send_schedule == nullptr && rdmc_schedule->send_step < rdmc_schedule->get_total_steps()) {
+            rdmc_schedule->send_step++;
+            rdmc_schedule->load_outgoing_schedule();
+        }
+
+        if (rdmc_schedule->send_step == rdmc_schedule->get_total_steps()) return;
+    }
+    else {
+        query_id = qid;
+        rdmc_src_server_id = rdmc_schedule->dst_servers_list[0];
+        rdmc_src_gpu_id = rdmc_schedule->dst_gpus_list[0];
+        curr_gpu_id = rdmc_schedule->dst_gpus_list[rdmc_schedule->rdmc_node_id];
+        flow_size = rdmc_schedule->block_flow_size;
+    }
+
+    if (rdmc_schedule->send_schedule != nullptr && !rdmc_schedule->sending && rdmc_schedule->received_block[rdmc_schedule->send_schedule->target_block_num] &&
+        rdmc_schedule->ready_to_receive[rdmc_schedule->send_schedule->target_node]) {
+
+        rdmc_schedule->ready_to_receive[rdmc_schedule->send_schedule->target_node] = false;
+        unsigned long m_flow_id = rdmc_schedule->flow_ids_list[rdmc_schedule->rdmc_node_id];
+        int target_dst_server = rdmc_schedule->dst_servers_list[rdmc_schedule->send_schedule->target_node];
+        int target_dst_gpu = rdmc_schedule->dst_gpus_list[rdmc_schedule->send_schedule->target_node];
+
+        std::tuple<int, unsigned long> gpu_idx_flow_id_tuple = std::make_tuple(curr_gpu_id, m_flow_id);
+        auto flowid_msgpassing_found_itr = flowid_passingmsg_mapper.find(gpu_idx_flow_id_tuple);
+        if (flowid_msgpassing_found_itr == flowid_passingmsg_mapper.end()) {
+            
+            auto passing_msg = new BCastCustomCollectiveMsgPasserInfo(m_flow_id, rdmc_schedule->block_flow_size,
+                    rdmc_schedule->block_flow_size, query_id, curr_gpu_id);
+
+            passing_msg->is_new_flow = true;
+            passing_msg->dst_gpu = target_dst_gpu;
+            passing_msg->num_dsts = rdmc_schedule->num_nodes;
+            passing_msg->rdmc_source_server_id = rdmc_src_server_id;
+            passing_msg->rdmc_source_gpu_id = rdmc_src_gpu_id;
+            passing_msg->rdmc_block_num = rdmc_schedule->send_schedule->target_block_num;
+
+            for (int t = 0; t < rdmc_schedule->num_nodes; t++) {
+                passing_msg->responsibility.push_back(rdmc_schedule->dst_servers_list[t]);
+                passing_msg->responsibility_gpu.push_back(rdmc_schedule->dst_gpus_list[t]);
+                passing_msg->responsiblity_flow_ids.push_back(rdmc_schedule->flow_ids_list[t]);
+            }
+            flowid_passingmsg_mapper.insert(std::make_pair(gpu_idx_flow_id_tuple, passing_msg));
+            flowid_msgpassing_found_itr = flowid_passingmsg_mapper.find(gpu_idx_flow_id_tuple);
+        } else {
+            // Sana RDMC I don't think we need to do this since a block is a flow which is passed as a whole.
+            // differnet blocks of the same message will have different flow ids.
+//            flowid_msgpassing_found_itr->second->is_new_flow = false;
+//            flowid_msgpassing_found_itr->second->msg_size += flow_size;
+            throw cRuntimeError("RDMC: How are we receiving more than block size to pass in one flow?");
+        }
+
+        EV << "passing message size is: " << flowid_msgpassing_found_itr->second->msg_size << endl;
+        flowid_msgpassing_found_itr->second->original_flow_terminated = true; // SANA RDMC : I assume it will always be true but check with sepehr
+        flowid_msgpassing_found_itr->second->m_collective_type = rdmc_schedule->m_collective_type;
+        flowid_msgpassing_found_itr->second->m_collective_alg = BCAST_RDMC;
+        flowid_msgpassing_found_itr->second->rdmc_source_server_id = rdmc_src_server_id;
+        flowid_msgpassing_found_itr->second->rdmc_source_gpu_id = rdmc_src_gpu_id;
+        flowid_msgpassing_found_itr->second->rdmc_block_num = rdmc_schedule->send_schedule->target_block_num;
+        flowid_msgpassing_found_itr->second->check_metrics();
+
+
+        rdmc_schedule->sending = true;
+        
+        if (target_dst_server == parent_index) {
+            EV << "Dst GPU is in the same host as Src GPU" << endl;
+            simtime_t processing_delay = get_processing_delay(flowid_msgpassing_found_itr->second->dst_gpu,
+                    flowid_msgpassing_found_itr->second->m_collective_type,
+                    flowid_msgpassing_found_itr->second->m_collective_alg);
+            simtime_t pass_delay = get_intra_host_pass_delay(flow_size);
+
+            // since we change the src gpu to dst gpu when pass_bcast is called, it messes up RDMC block completion since we lose which gpu the completion
+            EV << "Calling schedule finish at curr gpu: " << curr_gpu_id << endl;
+            schedule_finish_if_required(flowid_msgpassing_found_itr->second, processing_delay);
+            schedule_pass(flowid_msgpassing_found_itr->second, processing_delay + pass_delay);
+
+            // just erase it becasue the message is completely passed but don't delete it because
+            // message will be delivered somewhere else // Sana RDMC it might be same for rdmc
+            flowid_passingmsg_mapper.erase(flowid_msgpassing_found_itr);
+
+            // trigger block send completion here [for intra host this is the only place to do so]
+            rdmc_complete_block_send(query_id, rdmc_src_server_id, rdmc_src_gpu_id, curr_gpu_id);
+        } else {
+            // In case we should reach another host
+            init_socket(target_dst_server, target_dst_gpu);
+            /*
+                * If flowid_msgpassing_found_itr->second->msg_size != flow_size,
+                * then we know that the message had some bytes pending generate signal from mac
+                * which means that we should only add to those bytes and wait for the signal
+                */
+            if (flowid_msgpassing_found_itr->second->msg_size == flow_size)
+                pass_msg(target_dst_server, flowid_msgpassing_found_itr->second);
+
+            if (flowid_msgpassing_found_itr->second->msg_size == 0 &&
+                    flowid_msgpassing_found_itr->second->original_flow_terminated) {
+                flowid_msgpassing_found_itr->second->responsibility.clear();
+                flowid_msgpassing_found_itr->second->responsibility_gpu.clear();
+                flowid_msgpassing_found_itr->second->responsiblity_flow_ids.clear();
+                gpu_idx_flow_id_to_seq_num.erase(gpu_idx_flow_id_tuple);
+                delete flowid_msgpassing_found_itr->second;
+                flowid_passingmsg_mapper.erase(flowid_msgpassing_found_itr);
+
+                rdmc_complete_block_send(query_id, rdmc_src_server_id, rdmc_src_gpu_id, curr_gpu_id);
+            }
+        }
+    }
+    else {
+        // send conditions not met
+    }
+}
+
 
 void UDPLongBroadcastPasserApp::pass_bcast_binomial_tree(BCastCustomCollectiveMsgPasserInfo* record_msg_info) {
     EV << "UDPLongBroadcastPasserApp::pass_bcast_binomialbinomial)" << endl;
@@ -2074,374 +2316,6 @@ void UDPLongBroadcastPasserApp::pass_bcast_optireduce(BCastCustomCollectiveMsgPa
     }
 }
 
-void UDPLongBroadcastPasserApp::pass_bcast_multiwrite(Packet* pkt, GenericAppMsg* payload) {
-    /*
-     * When the current node is just a relay and we should just pass
-     */
-    EV << "UDPLongBroadcastPasserApp::pass_bcast_multiwrite_relay()" << endl;
-
-
-    std::set<int> dst_server_set;
-    // here all the responsibilites that are dst servers remain untouched
-    // since we are in a relay node not a dst node
-    // otherwise, this function wouldn't have been called!
-    int num_dst_servers = (payload->getResponsibility_listArraySize());
-    int dst_server_idx_list[num_dst_servers];
-    int gpu_idx_list[num_dst_servers];
-    unsigned long flow_id_list[num_dst_servers];
-    for (int k = 0; k < payload->getResponsibility_listArraySize(); k++){
-        // in dst_server_idx there can be this server's index, so filter it out
-        int m_dst_server_idx = payload->getResponsibility_list(k);
-
-        if (m_dst_server_idx == parent_index)
-            throw cRuntimeError("Relay node must not be among dst node list!");
-
-        if (dst_server_set.find(m_dst_server_idx) != dst_server_set.end())
-            throw cRuntimeError("At passer, servers must be unique for multiwrite!");
-
-        dst_server_set.insert(m_dst_server_idx);
-        dst_server_idx_list[k] = m_dst_server_idx;
-        gpu_idx_list[k] = payload->getResponsibility_gpu_list(k);
-        flow_id_list[k] = payload->getResponsibility_flow_id_list(k);
-    }
-
-    int src_leaf_idx = int(parent_index * 1.0 / num_servers_under_each_leaf);
-    int src_pod_idx = 0;
-    if (use_fattree) {
-        src_pod_idx = int(parent_index * 1.0 / (num_servers_under_each_leaf * fattree_k / 2.0));
-    }
-
-    // server idx to which we should connect to --> list of <dst servers under this candidate, dst gpus, flow ids>
-    std::map<int, std::list<std::tuple<int, int, unsigned long>>> candidate_server_to_dst_info;
-
-    for (int i = 0; i < num_dst_servers; i++) {
-        if (dst_server_idx_list[i] == parent_index)
-            throw cRuntimeError("parent_index must have been removed already!");
-
-        int dst_leaf_idx = int(dst_server_idx_list[i] * 1.0 / num_servers_under_each_leaf);
-        int dst_pod_idx = 0;
-        if (use_fattree) {
-            dst_pod_idx = int(dst_server_idx_list[i] * 1.0 /
-                    (num_servers_under_each_leaf * fattree_k / 2.0));
-        }
-
-        int candidate_server;
-        if (src_pod_idx != dst_pod_idx) {
-            EV << "source and dst do not share a pod so we shoudl select a random candidate under the pod" << std::endl;
-            int pod_start_server = dst_pod_idx * int(num_servers_under_each_leaf * fattree_k / 2.0);
-            // end is not in the range [start, end)
-            int pod_end_server = pod_start_server + int(num_servers_under_each_leaf * fattree_k / 2.0);
-            // this ensures that all the servers under the same pod go to the same candidate
-            std::string hash_input = getFullName();
-            hash_input += std::to_string(dst_pod_idx);
-            candidate_server = pod_start_server +
-                    (std::hash<std::string>{}(hash_input) %
-                    int(num_servers_under_each_leaf * fattree_k / 2.0));
-        } else if (src_leaf_idx != dst_leaf_idx) {
-            EV << "source and dst share the pod but not the leaf, so select a random candidate under the leaf" << std::endl;
-            int leaf_start_server = dst_leaf_idx * num_servers_under_each_leaf;
-            int leaf_end_server = leaf_start_server + num_servers_under_each_leaf;
-            // this ensures that all the servers under the same leaf go to the same candidate
-            std::string hash_input = getFullName();
-            hash_input += std::to_string(dst_leaf_idx);
-            candidate_server = leaf_start_server +
-                    (std::hash<std::string>{}(hash_input) % num_servers_under_each_leaf);
-        } else {
-            EV << "source and dst are under the same leaf. send it directly to the dst" << std::endl;
-            candidate_server = dst_server_idx_list[i];
-        }
-
-        EV << "Chosen candidate server: " << candidate_server << std::endl;
-        if (candidate_server_to_dst_info.find(candidate_server) ==
-                candidate_server_to_dst_info.end()) {
-            std::list<std::tuple<int, int, unsigned long>> tmp_list;
-            candidate_server_to_dst_info[candidate_server] = tmp_list;
-        }
-
-        EV << "candidate: " << candidate_server << " --> " <<
-                "server: " << dst_server_idx_list[i] <<
-                ", gpu: " << gpu_idx_list[i] <<
-                ", flow id: " << flow_id_list[i] << std::endl;
-
-        candidate_server_to_dst_info[candidate_server].push_back(
-                std::make_tuple(dst_server_idx_list[i], gpu_idx_list[i], flow_id_list[i]));
-    }
-
-    for (auto candidate_itr = candidate_server_to_dst_info.begin();
-            candidate_itr != candidate_server_to_dst_info.end();
-            candidate_itr++) {
-        int server_idx;
-        int gpu_idx;
-        unsigned long flow_id;
-
-        if (candidate_itr->second.size() == 1) {
-            auto m_tuple = (*candidate_itr->second.begin());
-            server_idx = std::get<0>(m_tuple);
-            gpu_idx = std::get<1>(m_tuple);
-            flow_id = std::get<2>(m_tuple);
-        } else if (candidate_itr->second.size() > 1) {
-            auto m_tuple = (*candidate_itr->second.begin());
-            server_idx = candidate_itr->first;
-            // if the candidate is already in the list, use the appropriate gpu and flowid
-            bool info_found = false;
-            for (auto tmp_it : candidate_itr->second) {
-                if (server_idx == std::get<0>(tmp_it)) {
-                    gpu_idx = std::get<1>(tmp_it);
-                    flow_id = std::get<2>(tmp_it);
-                    EV << "Server is part of dsts, using gpu: " << gpu_idx <<
-                            ", and flow_id: " << flow_id << std::endl;
-                    info_found = true;
-                    break;
-                }
-            }
-            if (!info_found) {
-                gpu_idx = std::get<1>(m_tuple);
-                flow_id = std::get<2>(m_tuple);
-                EV << "Server is NOT part of dsts, using gpu: " << gpu_idx <<
-                        ", and flow_id: " << flow_id << std::endl;
-            }
-        } else
-            throw cRuntimeError("We have a candidate assigned to empty list!?");
-
-        EV << "Chunk length is: " << payload->getChunkLength() << std::endl;
-        auto new_msg = new BCastCustomCollectiveMsgPasserInfo(flow_id,
-                int(payload->getChunkLength().get() / 8.0),
-                int(payload->getTotal_flow_size().get() / 8.0),
-                payload->getQuery_id(),
-                payload->getDst_gpu_idx());
-        for (auto itr = candidate_itr->second.begin();
-                itr != candidate_itr->second.end();
-                itr++) {
-            auto m_tuple = (*itr);
-            int tmp_server_idx = std::get<0>(m_tuple);
-            int tmp_gpu_idx = std::get<1>(m_tuple);
-            int tmp_flow_id = std::get<2>(m_tuple);
-            new_msg->responsibility.push_back(tmp_server_idx);
-            new_msg->responsibility_gpu.push_back(tmp_gpu_idx);
-            new_msg->responsiblity_flow_ids.push_back(tmp_flow_id);
-        }
-        new_msg->num_dsts = new_msg->responsibility.size();
-        new_msg->is_new_flow = true;
-        new_msg->dst_gpu = gpu_idx;
-
-        new_msg->m_collective_type = payload->getCollective_type();
-        new_msg->m_collective_alg = BCAST_MULTIWRITE;
-
-        if (server_idx == parent_index) {
-            throw cRuntimeError("transmission to self does not work with multiwrite!");
-        } else {
-            EV << "passer: Sending to server " << server_idx << ", gpu " << gpu_idx << std::endl;
-            init_socket(server_idx, gpu_idx);
-            pass_msg(server_idx, new_msg);
-        }
-    }
-
-}
-
-void UDPLongBroadcastPasserApp::pass_bcast_multiwrite(BCastCustomCollectiveMsgPasserInfo* record_msg_info) {
-    /*
-     * When the current node is a destination
-     */
-    EV << "UDPLongBroadcastPasserApp::pass_bcast_multiwrite_dst()" << endl;
-
-    // here, we are at one of the dsts so responsibility size is reduced by 1
-    int num_dst_servers = (record_msg_info->responsibility.size() - 1);
-    if (num_dst_servers == 0) {
-        EV << "There is no one to pass the message to" << endl;
-        return;
-    }
-
-    unsigned long query_id = record_msg_info->query_id;
-    int curr_gpu = record_msg_info->src_gpu;
-    unsigned long flow_id = 0;
-
-    std::set<int> dst_server_set;
-    int dst_server_idx_list[num_dst_servers];
-    int gpu_idx_list[num_dst_servers];
-    unsigned long flow_id_list[num_dst_servers];
-    int idx = 0;
-    auto responsibility_gpu_itr = record_msg_info->responsibility_gpu.begin();
-    auto responsibility_flowid_itr = record_msg_info->responsiblity_flow_ids.begin();
-    for (auto responsibility_dst_server : record_msg_info->responsibility){
-        // in dst_server_idx there can be this server's index, so filter it out
-        int m_dst_server_idx = responsibility_dst_server;
-
-        if (m_dst_server_idx == parent_index) {
-
-            if (curr_gpu != (*responsibility_gpu_itr)) {
-                std::cout << "server: " << parent_index << std::endl;
-                std::cout << (*responsibility_gpu_itr) << std::endl;
-                std::cout << curr_gpu << std::endl;
-                throw cRuntimeError("The current gpu of record_msg_info does not match our expected gpu!!");
-            }
-
-            if (record_msg_info->flow_id != (*responsibility_flowid_itr)) {
-                std::cout << (*responsibility_flowid_itr) << std::endl;
-                std::cout << record_msg_info->flow_id << std::endl;
-                throw cRuntimeError("The flow id of record_msg_info does not match our expected flow id!");
-            }
-
-            responsibility_gpu_itr++;
-            responsibility_flowid_itr++;
-            continue;
-        }
-
-        if (dst_server_set.find(m_dst_server_idx) != dst_server_set.end())
-            throw cRuntimeError("At passer, servers must be unique for multiwrite!");
-
-        dst_server_set.insert(m_dst_server_idx);
-        dst_server_idx_list[idx] = m_dst_server_idx;
-        gpu_idx_list[idx] = (*responsibility_gpu_itr);
-        flow_id_list[idx] = (*responsibility_flowid_itr);
-        idx++;
-        responsibility_gpu_itr++;
-        responsibility_flowid_itr++;
-    }
-
-    emit(flowPassedSignal, record_msg_info->flow_id);
-    unsigned long flow_size = record_msg_info->msg_size;
-
-    EV << "message size is: " << flow_size << std::endl;
-
-    int src_leaf_idx = int(parent_index * 1.0 / num_servers_under_each_leaf);
-    int src_pod_idx = 0;
-    if (use_fattree) {
-        src_pod_idx = int(parent_index * 1.0 / (num_servers_under_each_leaf * fattree_k / 2.0));
-    }
-
-    EV << "src: " << parent_index << ", src_leaf: " << src_leaf_idx <<
-                    ", src_pod: " << src_pod_idx << std::endl;
-
-    // server idx to which we should connect to --> list of <dst servers under this candidate, dst gpus, flow ids>
-    std::map<int, std::list<std::tuple<int, int, unsigned long>>> candidate_server_to_dst_info;
-
-    for (int i = 0; i < num_dst_servers; i++) {
-        if (dst_server_idx_list[i] == parent_index)
-            throw cRuntimeError("parent_index must have been removed already!");
-
-        int dst_leaf_idx = int(dst_server_idx_list[i] * 1.0 / num_servers_under_each_leaf);
-        int dst_pod_idx = 0;
-        if (use_fattree) {
-            dst_pod_idx = int(dst_server_idx_list[i] * 1.0 /
-                    (num_servers_under_each_leaf * fattree_k / 2.0));
-        }
-
-        EV << "dst: " << dst_server_idx_list[i] << ", dst_leaf: " << dst_leaf_idx <<
-                ", dst_pod: " << dst_pod_idx << std::endl;
-
-        int candidate_server;
-        if (src_pod_idx != dst_pod_idx) {
-            EV << "source and dst do not share a pod so we shoudl select a random candidate under the pod" << std::endl;
-            int pod_start_server = dst_pod_idx * int(num_servers_under_each_leaf * fattree_k / 2.0);
-            // end is not in the range [start, end)
-            int pod_end_server = pod_start_server + int(num_servers_under_each_leaf * fattree_k / 2.0);
-            // this ensures that all the servers under the same pod go to the same candidate
-            std::string hash_input = getFullName();
-            hash_input += std::to_string(dst_pod_idx);
-            candidate_server = pod_start_server +
-                    (std::hash<std::string>{}(hash_input) %
-                    int(num_servers_under_each_leaf * fattree_k / 2.0));
-        } else if (src_leaf_idx != dst_leaf_idx) {
-            EV << "source and dst share the pod but not the leaf, so select a random candidate under the leaf" << std::endl;
-            int leaf_start_server = dst_leaf_idx * num_servers_under_each_leaf;
-            int leaf_end_server = leaf_start_server + num_servers_under_each_leaf;
-            // this ensures that all the servers under the same leaf go to the same candidate
-            std::string hash_input = getFullName();
-            hash_input += std::to_string(dst_leaf_idx);
-            candidate_server = leaf_start_server +
-                    (std::hash<std::string>{}(hash_input) % num_servers_under_each_leaf);
-        } else {
-            EV << "source and dst are under the same leaf. send it directly to the dst" << std::endl;
-            candidate_server = dst_server_idx_list[i];
-        }
-
-        EV << "Chosen candidate server: " << candidate_server << std::endl;
-        if (candidate_server_to_dst_info.find(candidate_server) ==
-                candidate_server_to_dst_info.end()) {
-            std::list<std::tuple<int, int, unsigned long>> tmp_list;
-            candidate_server_to_dst_info[candidate_server] = tmp_list;
-        }
-
-        EV << "candidate: " << candidate_server << " --> " <<
-                "server: " << dst_server_idx_list[i] <<
-                ", gpu: " << gpu_idx_list[i] <<
-                ", flow id: " << flow_id_list[i] << std::endl;
-
-        candidate_server_to_dst_info[candidate_server].push_back(
-                std::make_tuple(dst_server_idx_list[i], gpu_idx_list[i], flow_id_list[i]));
-    }
-
-    for (auto candidate_itr = candidate_server_to_dst_info.begin();
-            candidate_itr != candidate_server_to_dst_info.end();
-            candidate_itr++) {
-        int server_idx;
-        int gpu_idx;
-        unsigned long flow_id;
-
-        if (candidate_itr->second.size() == 1) {
-            EV << "Server " << candidate_itr->first << " is only candidate for itself!" << std::endl;
-            auto m_tuple = (*candidate_itr->second.begin());
-            server_idx = std::get<0>(m_tuple);
-            gpu_idx = std::get<1>(m_tuple);
-            flow_id = std::get<2>(m_tuple);
-        } else if (candidate_itr->second.size() > 1) {
-            auto m_tuple = (*candidate_itr->second.begin());
-            server_idx = candidate_itr->first;
-            // if the candidate is already in the list, use the appropriate gpu and flowid
-            bool info_found = false;
-            for (auto tmp_it : candidate_itr->second) {
-                if (server_idx == std::get<0>(tmp_it)) {
-                    gpu_idx = std::get<1>(tmp_it);
-                    flow_id = std::get<2>(tmp_it);
-                    EV << "Server is part of dsts, using gpu: " << gpu_idx <<
-                            ", and flow_id: " << flow_id << std::endl;
-                    info_found = true;
-                    break;
-                }
-            }
-            if (!info_found) {
-                gpu_idx = std::get<1>(m_tuple);
-                flow_id = std::get<2>(m_tuple);
-                EV << "Server is NOT part of dsts, using gpu: " << gpu_idx <<
-                        ", and flow_id: " << flow_id << std::endl;
-            }
-        } else
-            throw cRuntimeError("We have a candidate assigned to empty list!?");
-
-        EV << "Chunk length is: " << flow_size << std::endl;
-        auto new_msg = new BCastCustomCollectiveMsgPasserInfo(flow_id,
-                flow_size,
-                record_msg_info->total_flow_size,
-                query_id,
-                curr_gpu);
-        for (auto itr = candidate_itr->second.begin();
-                itr != candidate_itr->second.end();
-                itr++) {
-            auto m_tuple = (*itr);
-            int tmp_server_idx = std::get<0>(m_tuple);
-            int tmp_gpu_idx = std::get<1>(m_tuple);
-            int tmp_flow_id = std::get<2>(m_tuple);
-            new_msg->responsibility.push_back(tmp_server_idx);
-            new_msg->responsibility_gpu.push_back(tmp_gpu_idx);
-            new_msg->responsiblity_flow_ids.push_back(tmp_flow_id);
-        }
-        new_msg->num_dsts = new_msg->responsibility.size();
-        new_msg->is_new_flow = true;
-        new_msg->dst_gpu = gpu_idx;
-
-        new_msg->m_collective_type = record_msg_info->m_collective_type;
-        new_msg->m_collective_alg = BCAST_MULTIWRITE;
-
-        if (server_idx == parent_index) {
-            throw cRuntimeError("transmission to self does not work with multiwrite!");
-        } else {
-            EV << "passer: Sending to server " << server_idx << ", gpu " << gpu_idx << std::endl;
-            init_socket(server_idx, gpu_idx);
-            pass_msg(server_idx, new_msg);
-        }
-    }
-}
-
 void UDPLongBroadcastPasserApp::pass_bcast_ring(BCastCustomCollectiveMsgPasserInfo* record_msg_info) {
     EV << "UDPLongBroadcastPasserApp::pass_bcast_ring()" << endl;
 
@@ -2581,6 +2455,7 @@ void UDPLongBroadcastPasserApp::handleMessageWhenUp(cMessage *msg)
                         ", dst gpu: " << msg_info->dst_gpu << endl;
                 if (msg_info->src_gpu < 0 || msg_info->dst_gpu < 0)
                     throw cRuntimeError("A message rcvd with msg_info->src_gpu < 0 || msg_info->dst_gpu < 0");
+                // for rdmc we need the source server and gpu
                 msg_info->src_gpu = msg_info->dst_gpu;
                 msg_info->dst_gpu = -1;
                 // msg might get deleted but does not get erased from flowid_passingmsg_mapper
@@ -2597,12 +2472,12 @@ void UDPLongBroadcastPasserApp::handleMessageWhenUp(cMessage *msg)
                     case BCAST_RING:
                         pass_bcast_ring(msg_info);
                         break;
-                    case BCAST_MULTIWRITE:
-                        pass_bcast_multiwrite(msg_info);
-                        break;
                     case BCAST_OPTIREDUCE:
                         if (msg_info->optireduce_in_reduction_phase)
                             pass_bcast_optireduce(msg_info);
+                        break;
+                    case BCAST_RDMC:
+                        pass_bcast_rdmc(msg_info);
                         break;
                     case BCAST_BINARY_TREE:
                         // every node only passes a message from a query id once in all-reduce
@@ -2667,28 +2542,14 @@ void UDPLongBroadcastPasserApp::handleMessageWhenUp(cMessage *msg)
                 EV << "Passer: Flow with flow id " << msg_info->flow_id << " is completed!" << endl;
                 if (msg_info->flow_id < 0 || msg_info->query_id < 0)
                     throw cRuntimeError("Invalid message info!");
+                // Sana RDMC: check here if rdmc and flow finished, then add delay before emitting complete signal.
                 emit(flowEndedSignal, msg_info->flow_id);
                 emit(flowEndedQueryIDSignal, msg_info->query_id);
 
-                if (use_autoccl &&
-                        (msg_info->m_collective_type == BROADCAST || msg_info->m_collective_type == ALL_GATHER || msg_info->m_collective_type == ALL_REDUCE) &&
-                        (msg_info->m_collective_alg == BCAST_RING || msg_info->m_collective_alg == BCAST_BINARY_TREE)) {
-                    unsigned long flow_size = retrieve_original_flow_size(
-                            msg_info->m_collective_type,
-                            msg_info->m_collective_alg,
-                            msg_info->total_flow_size);
-
-//                    std::cout << "AUTOCCL: Reporting completion of a flow of size " <<
-//                            flow_size << " to the initiator." << std::endl;
-//                    std::cout << "Collective: " << msg_info->m_collective_type << ", algorithm: " <<
-//                            msg_info->m_collective_alg << std::endl;
-
-                    UDPLongAllgatherInitiatorApp::autoccl_inject_flow_finish(use_autoccl,
-                            autoccl_allreduce_only,
-                            msg_info->m_collective_type,
-                            msg_info->m_collective_alg,
-                            msg_info->query_id,
-                            flow_size);
+                // Sana RDMC: this is where a receive of a block finishes, so i update receive schedule and send a ready for receive.
+                if (msg_info->m_collective_alg == BCAST_RDMC) {
+                    EV << "Calling RDMC block receive finished for server " << parent_index << " gpu " << msg_info->dst_gpu << " block " << msg_info->rdmc_block_num << endl;
+                    rdmc_complete_block_receive(msg_info->query_id, msg_info->rdmc_source_server_id, msg_info->rdmc_source_gpu_id, msg_info->dst_gpu, msg_info->rdmc_block_num);
                 }
 
                 delete msg_info;
@@ -2757,7 +2618,7 @@ void UDPLongBroadcastPasserApp::dataArrived(Packet *msg, bool just_complete_mess
     auto chunk = msg_dup->removeAtFront<SliceChunk>();
     std::map<std::tuple<int, unsigned long>, BCastCustomCollectiveMsgPasserInfo*>::iterator record_msg_found_itr;
     bool unused_optireduce_flow = false;    // when a flow is completed but not gonna be used anymore
-    b total_length = b(0);
+    int tempcurrgpu, tempflowid;
     while (true) {
         auto chunk_length = chunk->getLength();
 
@@ -2771,20 +2632,12 @@ void UDPLongBroadcastPasserApp::dataArrived(Packet *msg, bool just_complete_mess
         EV << "Removed bytes: " << payload->getRsbf_removed_bytes() << endl;
         chunk_length += B(payload->getRsbf_removed_bytes());
 
-        if (payload->getUsing_elmo()) {
-//            std::cout << "getUsing_elmo: True" << endl;
-            if (payload->getUseful_data_bytes() == 0) {
-                std::cout << "Useful data (B): " << payload->getUseful_data_bytes() << endl;
-                throw cRuntimeError("Invalid useful data entered for elmo!");
-            }
-            chunk_length = B(payload->getUseful_data_bytes());
-            EV << "Chunk length updated to: " << chunk_length << endl;
-        }
-
         unsigned long flow_id = payload->getRequesterID();
+        tempflowid = flow_id;
         unsigned long query_id = payload->getQuery_id();
         unsigned long seq_num = payload->getSeq_num();
         int curr_gpu = payload->getDst_gpu_idx();
+        tempcurrgpu = curr_gpu;
         int src_gpu = payload->getSrc_gpu_idx();
         int m_collective_type = payload->getCollective_type();
         int m_collective_alg_type = payload->getCollective_alg_type();
@@ -2802,34 +2655,21 @@ void UDPLongBroadcastPasserApp::dataArrived(Packet *msg, bool just_complete_mess
             if (flow_id == 0)
                 throw cRuntimeError("How is flow id still 0!!");
         }
-
-        if (m_collective_alg_type == BCAST_MULTIWRITE) {
-
-            if (payload->getResponsibility_flow_id_listArraySize() !=
-                    payload->getResponsibility_gpu_listArraySize() ||
-                    payload->getResponsibility_gpu_listArraySize() !=
-                    payload->getResponsibility_listArraySize()) {
-                throw cRuntimeError("multiwire: responsibility array sizes don't match!");
+        if (m_collective_alg_type == BCAST_INA) {
+            // update flow id and total length
+            auto ina_query_id_found = ina_query_to_flow_id.find(query_id);
+            if (ina_query_id_found == ina_query_to_flow_id.end()) {
+                EV << "Assiging packets for query_id: " << query_id <<
+                        " to flow_id: " << flow_id << " and curr_gpu: " <<
+                        curr_gpu << endl;
+                ina_query_to_flow_id.insert(std::make_pair(query_id, flow_id));
+                ina_query_to_gpu_idx.insert(std::make_pair(query_id, curr_gpu));
+                ina_query_id_found = ina_query_to_flow_id.find(query_id);
             }
-
-            bool server_is_relay = true; // for servers that are not actually part of the collective
-            for (int k = 0; k < payload->getResponsibility_listArraySize(); k++) {
-                if (parent_index == payload->getResponsibility_list(k)) {
-                    server_is_relay = false;
-                    break;
-                }
-            }
-
-            if (server_is_relay) {
-                EV << "Server is relay node... no need to do anything... just pass the packet" << std::endl;
-                auto payload_dup = payload->dup();
-                pass_bcast_multiwrite(msg, payload_dup);
-                delete payload_dup;
-                delete temp;
-                delete msg_dup;
-                delete msg;
-                return;
-            }
+            auto ina_gpu_idx_found = ina_query_to_gpu_idx.find(query_id);
+            flow_id = ina_query_id_found->second;
+            curr_gpu = ina_gpu_idx_found->second;
+            total_length *= num_gpus;
         }
 
         bool in_src_sharding = payload->getIn_src_sharding();
@@ -2852,19 +2692,43 @@ void UDPLongBroadcastPasserApp::dataArrived(Packet *msg, bool just_complete_mess
         auto seq_num_set_itr = arrived_seq_nums_set.find(srcgpu_dstgpu_flowid_tuple);
         if (seq_num_set_itr == arrived_seq_nums_set.end()) {
             auto seq_num_history_found = seq_num_complete_flow_history.find(srcgpu_dstgpu_flowid_tuple);
+            // Sana RDMC : had to deal with different blocks between same sender and receiver gpu sharding the same flow id case
             if (seq_num_history_found == seq_num_complete_flow_history.end()) {
                 EV << "Seq num set initiated: " << seq_num << endl;
                 std::set<unsigned long> tmp_set;
                 tmp_set.insert(seq_num);
                 arrived_seq_nums_set.insert(std::make_pair(srcgpu_dstgpu_flowid_tuple, tmp_set));
                 seq_num_complete_flow_history.insert(srcgpu_dstgpu_flowid_tuple);
+                std::list<int> rdmc_tmp_list;
+                rdmc_tmp_list.push_back(payload->getRdmc_block_number());
+                rdmc_block_nums_history.insert(std::make_pair(srcgpu_dstgpu_flowid_tuple, rdmc_tmp_list));
             } else {
-                // if flow is completed and we get packets for it again...
-                EV << "This flow with this seq num is completed before...Dropping" << endl;
-                delete temp;
-                delete msg_dup;
-                delete msg;
-                return;
+                bool flow_already_terminated = true;
+                if (m_collective_alg_type == BCAST_RDMC) {
+                    auto block_nums_history_found_itr = rdmc_block_nums_history.find(srcgpu_dstgpu_flowid_tuple);
+                    if (block_nums_history_found_itr == rdmc_block_nums_history.end())
+                        throw cRuntimeError("RDMC: why is block history empty but flow history not?");
+                    auto block_num_found_itr = std::find(block_nums_history_found_itr->second.begin(), block_nums_history_found_itr->second.end(), payload->getRdmc_block_number());
+                    if (block_num_found_itr == block_nums_history_found_itr->second.end()) {
+                        // it is a different block so create a new entry for it
+                        flow_already_terminated = false;
+
+                        EV << "Seq num set initiated: " << seq_num << endl;
+                        std::set<unsigned long> tmp_set;
+                        tmp_set.insert(seq_num);
+                        arrived_seq_nums_set.insert(std::make_pair(srcgpu_dstgpu_flowid_tuple, tmp_set));
+                        // add block number to the list
+                        block_nums_history_found_itr->second.push_back(payload->getRdmc_block_number());
+                    }
+                } 
+                if (flow_already_terminated) {
+                    // if flow is completed and we get packets for it again...
+                    EV << "This flow with this seq num is completed before...Dropping" << endl;
+                    delete temp;
+                    delete msg_dup;
+                    delete msg;
+                    return;
+                }
             }
         } else {
             auto seq_num_found_itr = seq_num_set_itr->second.find(seq_num);
@@ -2880,6 +2744,7 @@ void UDPLongBroadcastPasserApp::dataArrived(Packet *msg, bool just_complete_mess
             }
         }
 
+        // Sana RDMC this could again be a problem if it is not deleted, other wise it would be fine (it is removed)
         record_msg_found_itr = flowid_receivedmsg_mapper.find(gpu_idx_flow_id_tuple);
         if (record_msg_found_itr == flowid_receivedmsg_mapper.end())
             flowid_receivedmsg_mapper.insert(std::make_pair(gpu_idx_flow_id_tuple, new BCastCustomCollectiveMsgPasserInfo()));
@@ -2940,9 +2805,6 @@ void UDPLongBroadcastPasserApp::dataArrived(Packet *msg, bool just_complete_mess
         } else {
             is_flow_complete = (flow_id_found_itr->second == total_length);
 
-//            if (m_collective_type == ALL_REDUCE)
-//                std::cout << "total length: " << total_length << ", rcvd: " << flow_id_found_itr->second << std::endl;
-
             if (is_flow_complete) {
                 // remove the bits received info for this flow
                 std::tuple<int, unsigned long> gpu_idx_flow_id_tuple = std::make_tuple(curr_gpu,flow_id);
@@ -2970,9 +2832,7 @@ void UDPLongBroadcastPasserApp::dataArrived(Packet *msg, bool just_complete_mess
             EV << "Data is complete." << endl;
         } else if (chunk_length + chunk_offset > total_length)
             throw cRuntimeError("chunk_length + chunk_offset > total_length");
-        else if (m_collective_alg_type == BCAST_MULTIWRITE) {
-            record_msg_found_itr->second->should_pass = true;
-        } else
+        else
             EV << "Still waiting for more data..." << endl;
 
         if (record_msg_found_itr->second->total_flow_size == 0) {
@@ -2995,6 +2855,11 @@ void UDPLongBroadcastPasserApp::dataArrived(Packet *msg, bool just_complete_mess
 
             record_msg_found_itr->second->optireduce_in_reduction_phase = payload->getOptireduce_in_reduction_phase();
 
+            // rdmc params
+            record_msg_found_itr->second->rdmc_source_server_id = payload->getRdmc_source_server_id();
+            record_msg_found_itr->second->rdmc_source_gpu_id = payload->getRdmc_source_gpu_id();
+            record_msg_found_itr->second->rdmc_block_num = payload->getRdmc_block_number();
+
             // replace with your own initiator app
             record_msg_found_itr->second->initiator_app_path = payload->getApp_full_path();
             std::regex pattern(R"(server\[\d+\])");
@@ -3013,7 +2878,6 @@ void UDPLongBroadcastPasserApp::dataArrived(Packet *msg, bool just_complete_mess
             }
             if (payload->getResponsibility_listArraySize() != 0) {
                 for (int k = 0; k < payload->getResponsibility_listArraySize(); k++) {
-
                     record_msg_found_itr->second->responsibility.push_back(payload->getResponsibility_list(k));
                     record_msg_found_itr->second->responsiblity_flow_ids.push_back(payload->getResponsibility_flow_id_list(k));
                     record_msg_found_itr->second->responsibility_gpu.push_back(payload->getResponsibility_gpu_list(k));
@@ -3050,6 +2914,7 @@ void UDPLongBroadcastPasserApp::dataArrived(Packet *msg, bool just_complete_mess
         // for all_reduce and reduce_scatter the message is already splitted into chunks when it arrives
         bool message_splitted_when_sent = record_msg_found_itr->second->m_collective_type == REDUCE_SCATTER ||
                 record_msg_found_itr->second->m_collective_alg == BCAST_OPTIREDUCE ||
+                record_msg_found_itr->second->m_collective_alg == BCAST_RDMC ||
                 (record_msg_found_itr->second->m_collective_alg == BCAST_RING &&
                         record_msg_found_itr->second->m_collective_type == ALL_REDUCE);
 
@@ -3062,8 +2927,9 @@ void UDPLongBroadcastPasserApp::dataArrived(Packet *msg, bool just_complete_mess
                         splitted_subflow_num);
             else
                 throw cRuntimeError("Unknown pipelining method!");
-            if (record_msg_found_itr->second->msg_size >= split_thresh)
+            if (record_msg_found_itr->second->msg_size >= split_thresh) {
                 record_msg_found_itr->second->should_pass = true;
+            }
         }
 
         delete temp;
@@ -3115,6 +2981,7 @@ void UDPLongBroadcastPasserApp::dataArrived(Packet *msg, bool just_complete_mess
 
 void UDPLongBroadcastPasserApp::schedule_finish_if_required(BCastCustomCollectiveMsgPasserInfo* msg_info, simtime_t delay) {
     EV << "UDPLongBroadcastPasserApp::schedule_finish_if_required" << endl;
+    // Sana RDMC: another option is to check rdmc and if it a complete message received, then we can
     // schedule finish/processing
     if (msg_info->original_flow_terminated) {
         auto finish_msg = new BCastCustomCollectiveMsgPasserInfo();
@@ -3123,19 +2990,35 @@ void UDPLongBroadcastPasserApp::schedule_finish_if_required(BCastCustomCollectiv
         finish_msg->query_id = msg_info->query_id;
         finish_msg->src_gpu = msg_info->src_gpu;
         finish_msg->dst_gpu = msg_info->dst_gpu;
+        finish_msg->rdmc_source_server_id = msg_info->rdmc_source_server_id;
+        finish_msg->rdmc_source_gpu_id = msg_info->rdmc_source_gpu_id;
+        finish_msg->rdmc_block_num = msg_info->rdmc_block_num;
         finish_msg->m_collective_alg = msg_info->m_collective_alg;
-        finish_msg->m_collective_type = msg_info->m_collective_type;
-        finish_msg->total_flow_size = msg_info->total_flow_size;
 
         unsigned long storage_loc = insert_msg_storage(finish_msg);
         EV << "processing delay is " << delay << endl;
         simtime_t now = simTime();
         EV << "Scheduling receive for " << now + delay << endl;
         EV << "Storage loc: " << storage_loc << endl;
+
+        simtime_t rdmc_delay = 0;
+        // Sana RDMC: if we are doing hierarchical RDMC then add the broadcast intra host delay along with completion of receiving complete message at the host
+        if (msg_info->m_collective_alg == BCAST_RDMC) {
+            auto rdmc_schedule_it = query_src_server_gpu_curr_gpu_map_to_rdmc_schedule.find(std::make_tuple(msg_info->query_id, msg_info->rdmc_source_server_id, msg_info->rdmc_source_gpu_id, msg_info->dst_gpu));
+            if (rdmc_schedule_it == query_src_server_gpu_curr_gpu_map_to_rdmc_schedule.end()) {
+                throw cRuntimeError("RDMC context for query not found! (fin)");
+            }
+            if (rdmc_schedule_it->second->hierarchical) {
+                int received = std::count(rdmc_schedule_it->second->received_block.begin(),
+                                          rdmc_schedule_it->second->received_block.end(), true);
+                if (received + 1 == (int)rdmc_schedule_it->second->num_blocks)
+                    rdmc_delay = rdmc_schedule_it->second->get_intra_host_pass_delay(nvlink_speed_gbps);
+            }
+        }
         cMessage *finishTimeoutMsg = new cMessage("custom_delay");
         finishTimeoutMsg->setKind(FINISH);
         finishTimeoutMsg->addPar("storage_loc") = storage_loc;
-        scheduleAt(now + delay, finishTimeoutMsg);
+        scheduleAt(now + delay + rdmc_delay, finishTimeoutMsg);
     }
 }
 

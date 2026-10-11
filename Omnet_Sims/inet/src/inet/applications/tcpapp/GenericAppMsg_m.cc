@@ -1064,9 +1064,6 @@ void GenericAppMsg::copy(const GenericAppMsg& other)
     this->tree_traversal_dir = other.tree_traversal_dir;
     this->collective_type = other.collective_type;
     this->collective_alg_type = other.collective_alg_type;
-    this->ina_leaf_aggregation_num = other.ina_leaf_aggregation_num;
-    this->ina_spine_aggregation_num = other.ina_spine_aggregation_num;
-    this->ina_core_aggregation_num = other.ina_core_aggregation_num;
     this->seq_num = other.seq_num;
     this->collective_scale = other.collective_scale;
     delete [] this->rsbf_seed_list;
@@ -1097,6 +1094,9 @@ void GenericAppMsg::copy(const GenericAppMsg& other)
     this->using_elmo = other.using_elmo;
     this->useful_data_bytes = other.useful_data_bytes;
     this->elmo_overhead_pop_bytes = other.elmo_overhead_pop_bytes;
+    this->rdmc_source_server_id = other.rdmc_source_server_id;
+    this->rdmc_source_gpu_id = other.rdmc_source_gpu_id;
+    this->rdmc_block_number = other.rdmc_block_number;
 }
 
 void GenericAppMsg::parsimPack(omnetpp::cCommBuffer *b) const
@@ -1140,9 +1140,6 @@ void GenericAppMsg::parsimPack(omnetpp::cCommBuffer *b) const
     doParsimPacking(b,this->tree_traversal_dir);
     doParsimPacking(b,this->collective_type);
     doParsimPacking(b,this->collective_alg_type);
-    doParsimPacking(b,this->ina_leaf_aggregation_num);
-    doParsimPacking(b,this->ina_spine_aggregation_num);
-    doParsimPacking(b,this->ina_core_aggregation_num);
     doParsimPacking(b,this->seq_num);
     doParsimPacking(b,this->collective_scale);
     b->pack(rsbf_seed_list_arraysize);
@@ -1165,6 +1162,9 @@ void GenericAppMsg::parsimPack(omnetpp::cCommBuffer *b) const
     doParsimPacking(b,this->using_elmo);
     doParsimPacking(b,this->useful_data_bytes);
     doParsimPacking(b,this->elmo_overhead_pop_bytes);
+    doParsimPacking(b,this->rdmc_source_server_id);
+    doParsimPacking(b,this->rdmc_source_gpu_id);
+    doParsimPacking(b,this->rdmc_block_number);
 }
 
 void GenericAppMsg::parsimUnpack(omnetpp::cCommBuffer *b)
@@ -1262,9 +1262,6 @@ void GenericAppMsg::parsimUnpack(omnetpp::cCommBuffer *b)
     doParsimUnpacking(b,this->tree_traversal_dir);
     doParsimUnpacking(b,this->collective_type);
     doParsimUnpacking(b,this->collective_alg_type);
-    doParsimUnpacking(b,this->ina_leaf_aggregation_num);
-    doParsimUnpacking(b,this->ina_spine_aggregation_num);
-    doParsimUnpacking(b,this->ina_core_aggregation_num);
     doParsimUnpacking(b,this->seq_num);
     doParsimUnpacking(b,this->collective_scale);
     delete [] this->rsbf_seed_list;
@@ -1299,6 +1296,9 @@ void GenericAppMsg::parsimUnpack(omnetpp::cCommBuffer *b)
     doParsimUnpacking(b,this->using_elmo);
     doParsimUnpacking(b,this->useful_data_bytes);
     doParsimUnpacking(b,this->elmo_overhead_pop_bytes);
+    doParsimUnpacking(b,this->rdmc_source_server_id);
+    doParsimUnpacking(b,this->rdmc_source_gpu_id);
+    doParsimUnpacking(b,this->rdmc_block_number);
 }
 
 B GenericAppMsg::getExpectedReplyLength() const
@@ -2191,39 +2191,6 @@ void GenericAppMsg::setCollective_alg_type(int collective_alg_type)
     this->collective_alg_type = collective_alg_type;
 }
 
-int GenericAppMsg::getIna_leaf_aggregation_num() const
-{
-    return this->ina_leaf_aggregation_num;
-}
-
-void GenericAppMsg::setIna_leaf_aggregation_num(int ina_leaf_aggregation_num)
-{
-    handleChange();
-    this->ina_leaf_aggregation_num = ina_leaf_aggregation_num;
-}
-
-int GenericAppMsg::getIna_spine_aggregation_num() const
-{
-    return this->ina_spine_aggregation_num;
-}
-
-void GenericAppMsg::setIna_spine_aggregation_num(int ina_spine_aggregation_num)
-{
-    handleChange();
-    this->ina_spine_aggregation_num = ina_spine_aggregation_num;
-}
-
-int GenericAppMsg::getIna_core_aggregation_num() const
-{
-    return this->ina_core_aggregation_num;
-}
-
-void GenericAppMsg::setIna_core_aggregation_num(int ina_core_aggregation_num)
-{
-    handleChange();
-    this->ina_core_aggregation_num = ina_core_aggregation_num;
-}
-
 unsigned long GenericAppMsg::getSeq_num() const
 {
     return this->seq_num;
@@ -2560,6 +2527,39 @@ void GenericAppMsg::setElmo_overhead_pop_bytes(int elmo_overhead_pop_bytes)
     this->elmo_overhead_pop_bytes = elmo_overhead_pop_bytes;
 }
 
+int GenericAppMsg::getRdmc_source_server_id() const
+{
+    return this->rdmc_source_server_id;
+}
+
+void GenericAppMsg::setRdmc_source_server_id(int rdmc_source_server_id)
+{
+    handleChange();
+    this->rdmc_source_server_id = rdmc_source_server_id;
+}
+
+int GenericAppMsg::getRdmc_source_gpu_id() const
+{
+    return this->rdmc_source_gpu_id;
+}
+
+void GenericAppMsg::setRdmc_source_gpu_id(int rdmc_source_gpu_id)
+{
+    handleChange();
+    this->rdmc_source_gpu_id = rdmc_source_gpu_id;
+}
+
+int GenericAppMsg::getRdmc_block_number() const
+{
+    return this->rdmc_block_number;
+}
+
+void GenericAppMsg::setRdmc_block_number(int rdmc_block_number)
+{
+    handleChange();
+    this->rdmc_block_number = rdmc_block_number;
+}
+
 class GenericAppMsgDescriptor : public omnetpp::cClassDescriptor
 {
   private:
@@ -2594,9 +2594,6 @@ class GenericAppMsgDescriptor : public omnetpp::cClassDescriptor
         FIELD_tree_traversal_dir,
         FIELD_collective_type,
         FIELD_collective_alg_type,
-        FIELD_ina_leaf_aggregation_num,
-        FIELD_ina_spine_aggregation_num,
-        FIELD_ina_core_aggregation_num,
         FIELD_seq_num,
         FIELD_collective_scale,
         FIELD_rsbf_seed_list,
@@ -2617,6 +2614,9 @@ class GenericAppMsgDescriptor : public omnetpp::cClassDescriptor
         FIELD_using_elmo,
         FIELD_useful_data_bytes,
         FIELD_elmo_overhead_pop_bytes,
+        FIELD_rdmc_source_server_id,
+        FIELD_rdmc_source_gpu_id,
+        FIELD_rdmc_block_number,
     };
   public:
     GenericAppMsgDescriptor();
@@ -2720,9 +2720,6 @@ unsigned int GenericAppMsgDescriptor::getFieldTypeFlags(int field) const
         FD_ISEDITABLE,    // FIELD_tree_traversal_dir
         FD_ISEDITABLE,    // FIELD_collective_type
         FD_ISEDITABLE,    // FIELD_collective_alg_type
-        FD_ISEDITABLE,    // FIELD_ina_leaf_aggregation_num
-        FD_ISEDITABLE,    // FIELD_ina_spine_aggregation_num
-        FD_ISEDITABLE,    // FIELD_ina_core_aggregation_num
         FD_ISEDITABLE,    // FIELD_seq_num
         FD_ISEDITABLE,    // FIELD_collective_scale
         FD_ISARRAY | FD_ISEDITABLE,    // FIELD_rsbf_seed_list
@@ -2743,6 +2740,9 @@ unsigned int GenericAppMsgDescriptor::getFieldTypeFlags(int field) const
         FD_ISEDITABLE,    // FIELD_using_elmo
         FD_ISEDITABLE,    // FIELD_useful_data_bytes
         FD_ISEDITABLE,    // FIELD_elmo_overhead_pop_bytes
+        FD_ISEDITABLE,    // FIELD_rdmc_source_server_id
+        FD_ISEDITABLE,    // FIELD_rdmc_source_gpu_id
+        FD_ISEDITABLE,    // FIELD_rdmc_block_number
     };
     return (field >= 0 && field < 52) ? fieldTypeFlags[field] : 0;
 }
@@ -2785,9 +2785,6 @@ const char *GenericAppMsgDescriptor::getFieldName(int field) const
         "tree_traversal_dir",
         "collective_type",
         "collective_alg_type",
-        "ina_leaf_aggregation_num",
-        "ina_spine_aggregation_num",
-        "ina_core_aggregation_num",
         "seq_num",
         "collective_scale",
         "rsbf_seed_list",
@@ -2808,6 +2805,9 @@ const char *GenericAppMsgDescriptor::getFieldName(int field) const
         "using_elmo",
         "useful_data_bytes",
         "elmo_overhead_pop_bytes",
+        "rdmc_source_server_id",
+        "rdmc_source_gpu_id",
+        "rdmc_block_number",
     };
     return (field >= 0 && field < 52) ? fieldNames[field] : nullptr;
 }
@@ -2845,29 +2845,29 @@ int GenericAppMsgDescriptor::findField(const char *fieldName) const
     if (fieldName[0] == 't' && strcmp(fieldName, "tree_traversal_dir") == 0) return base+26;
     if (fieldName[0] == 'c' && strcmp(fieldName, "collective_type") == 0) return base+27;
     if (fieldName[0] == 'c' && strcmp(fieldName, "collective_alg_type") == 0) return base+28;
-    if (fieldName[0] == 'i' && strcmp(fieldName, "ina_leaf_aggregation_num") == 0) return base+29;
-    if (fieldName[0] == 'i' && strcmp(fieldName, "ina_spine_aggregation_num") == 0) return base+30;
-    if (fieldName[0] == 'i' && strcmp(fieldName, "ina_core_aggregation_num") == 0) return base+31;
-    if (fieldName[0] == 's' && strcmp(fieldName, "seq_num") == 0) return base+32;
-    if (fieldName[0] == 'c' && strcmp(fieldName, "collective_scale") == 0) return base+33;
-    if (fieldName[0] == 'r' && strcmp(fieldName, "rsbf_seed_list") == 0) return base+34;
-    if (fieldName[0] == 'r' && strcmp(fieldName, "rsbf_bitstream_list") == 0) return base+35;
-    if (fieldName[0] == 'r' && strcmp(fieldName, "rsbf_removed_bytes") == 0) return base+36;
-    if (fieldName[0] == 'i' && strcmp(fieldName, "init_tree_pkt_idx") == 0) return base+37;
-    if (fieldName[0] == 'd' && strcmp(fieldName, "dst_tor_idx") == 0) return base+38;
-    if (fieldName[0] == 'p' && strcmp(fieldName, "partial_mcast_original_flow_size_bytes") == 0) return base+39;
-    if (fieldName[0] == 'c' && strcmp(fieldName, "controller_setup_finish_time") == 0) return base+40;
-    if (fieldName[0] == 'n' && strcmp(fieldName, "num_msgs_in_tor_group") == 0) return base+41;
-    if (fieldName[0] == 't' && strcmp(fieldName, "tor_group_idx") == 0) return base+42;
-    if (fieldName[0] == 'a' && strcmp(fieldName, "agg_cidr_group_id") == 0) return base+43;
-    if (fieldName[0] == 'a' && strcmp(fieldName, "agg_cidr_group_member_count") == 0) return base+44;
-    if (fieldName[0] == 'c' && strcmp(fieldName, "core_cidr_group_id") == 0) return base+45;
-    if (fieldName[0] == 'c' && strcmp(fieldName, "core_cidr_group_member_count") == 0) return base+46;
-    if (fieldName[0] == 'i' && strcmp(fieldName, "in_src_sharding") == 0) return base+47;
-    if (fieldName[0] == 'u' && strcmp(fieldName, "using_orca") == 0) return base+48;
-    if (fieldName[0] == 'u' && strcmp(fieldName, "using_elmo") == 0) return base+49;
-    if (fieldName[0] == 'u' && strcmp(fieldName, "useful_data_bytes") == 0) return base+50;
-    if (fieldName[0] == 'e' && strcmp(fieldName, "elmo_overhead_pop_bytes") == 0) return base+51;
+    if (fieldName[0] == 's' && strcmp(fieldName, "seq_num") == 0) return base+29;
+    if (fieldName[0] == 'c' && strcmp(fieldName, "collective_scale") == 0) return base+30;
+    if (fieldName[0] == 'r' && strcmp(fieldName, "rsbf_seed_list") == 0) return base+31;
+    if (fieldName[0] == 'r' && strcmp(fieldName, "rsbf_bitstream_list") == 0) return base+32;
+    if (fieldName[0] == 'r' && strcmp(fieldName, "rsbf_removed_bytes") == 0) return base+33;
+    if (fieldName[0] == 'i' && strcmp(fieldName, "init_tree_pkt_idx") == 0) return base+34;
+    if (fieldName[0] == 'd' && strcmp(fieldName, "dst_tor_idx") == 0) return base+35;
+    if (fieldName[0] == 'p' && strcmp(fieldName, "partial_mcast_original_flow_size_bytes") == 0) return base+36;
+    if (fieldName[0] == 'c' && strcmp(fieldName, "controller_setup_finish_time") == 0) return base+37;
+    if (fieldName[0] == 'n' && strcmp(fieldName, "num_msgs_in_tor_group") == 0) return base+38;
+    if (fieldName[0] == 't' && strcmp(fieldName, "tor_group_idx") == 0) return base+39;
+    if (fieldName[0] == 'a' && strcmp(fieldName, "agg_cidr_group_id") == 0) return base+40;
+    if (fieldName[0] == 'a' && strcmp(fieldName, "agg_cidr_group_member_count") == 0) return base+41;
+    if (fieldName[0] == 'c' && strcmp(fieldName, "core_cidr_group_id") == 0) return base+42;
+    if (fieldName[0] == 'c' && strcmp(fieldName, "core_cidr_group_member_count") == 0) return base+43;
+    if (fieldName[0] == 'i' && strcmp(fieldName, "in_src_sharding") == 0) return base+44;
+    if (fieldName[0] == 'u' && strcmp(fieldName, "using_orca") == 0) return base+45;
+    if (fieldName[0] == 'u' && strcmp(fieldName, "using_elmo") == 0) return base+46;
+    if (fieldName[0] == 'u' && strcmp(fieldName, "useful_data_bytes") == 0) return base+47;
+    if (fieldName[0] == 'e' && strcmp(fieldName, "elmo_overhead_pop_bytes") == 0) return base+48;
+    if (fieldName[0] == 'r' && strcmp(fieldName, "rdmc_source_server_id") == 0) return base+49;
+    if (fieldName[0] == 'r' && strcmp(fieldName, "rdmc_source_gpu_id") == 0) return base+50;
+    if (fieldName[0] == 'r' && strcmp(fieldName, "rdmc_block_number") == 0) return base+51;
     return basedesc ? basedesc->findField(fieldName) : -1;
 }
 
@@ -2909,9 +2909,6 @@ const char *GenericAppMsgDescriptor::getFieldTypeString(int field) const
         "int",    // FIELD_tree_traversal_dir
         "int",    // FIELD_collective_type
         "int",    // FIELD_collective_alg_type
-        "int",    // FIELD_ina_leaf_aggregation_num
-        "int",    // FIELD_ina_spine_aggregation_num
-        "int",    // FIELD_ina_core_aggregation_num
         "unsigned long",    // FIELD_seq_num
         "unsigned int",    // FIELD_collective_scale
         "unsigned int",    // FIELD_rsbf_seed_list
@@ -2932,6 +2929,9 @@ const char *GenericAppMsgDescriptor::getFieldTypeString(int field) const
         "bool",    // FIELD_using_elmo
         "int",    // FIELD_useful_data_bytes
         "int",    // FIELD_elmo_overhead_pop_bytes
+        "int",    // FIELD_rdmc_source_server_id
+        "int",    // FIELD_rdmc_source_gpu_id
+        "int",    // FIELD_rdmc_block_number
     };
     return (field >= 0 && field < 52) ? fieldTypeStrings[field] : nullptr;
 }
@@ -3040,9 +3040,6 @@ std::string GenericAppMsgDescriptor::getFieldValueAsString(void *object, int fie
         case FIELD_tree_traversal_dir: return long2string(pp->getTree_traversal_dir());
         case FIELD_collective_type: return long2string(pp->getCollective_type());
         case FIELD_collective_alg_type: return long2string(pp->getCollective_alg_type());
-        case FIELD_ina_leaf_aggregation_num: return long2string(pp->getIna_leaf_aggregation_num());
-        case FIELD_ina_spine_aggregation_num: return long2string(pp->getIna_spine_aggregation_num());
-        case FIELD_ina_core_aggregation_num: return long2string(pp->getIna_core_aggregation_num());
         case FIELD_seq_num: return ulong2string(pp->getSeq_num());
         case FIELD_collective_scale: return ulong2string(pp->getCollective_scale());
         case FIELD_rsbf_seed_list: return ulong2string(pp->getRsbf_seed_list(i));
@@ -3063,6 +3060,9 @@ std::string GenericAppMsgDescriptor::getFieldValueAsString(void *object, int fie
         case FIELD_using_elmo: return bool2string(pp->getUsing_elmo());
         case FIELD_useful_data_bytes: return long2string(pp->getUseful_data_bytes());
         case FIELD_elmo_overhead_pop_bytes: return long2string(pp->getElmo_overhead_pop_bytes());
+        case FIELD_rdmc_source_server_id: return long2string(pp->getRdmc_source_server_id());
+        case FIELD_rdmc_source_gpu_id: return long2string(pp->getRdmc_source_gpu_id());
+        case FIELD_rdmc_block_number: return long2string(pp->getRdmc_block_number());
         default: return "";
     }
 }
@@ -3101,9 +3101,6 @@ bool GenericAppMsgDescriptor::setFieldValueAsString(void *object, int field, int
         case FIELD_tree_traversal_dir: pp->setTree_traversal_dir(string2long(value)); return true;
         case FIELD_collective_type: pp->setCollective_type(string2long(value)); return true;
         case FIELD_collective_alg_type: pp->setCollective_alg_type(string2long(value)); return true;
-        case FIELD_ina_leaf_aggregation_num: pp->setIna_leaf_aggregation_num(string2long(value)); return true;
-        case FIELD_ina_spine_aggregation_num: pp->setIna_spine_aggregation_num(string2long(value)); return true;
-        case FIELD_ina_core_aggregation_num: pp->setIna_core_aggregation_num(string2long(value)); return true;
         case FIELD_seq_num: pp->setSeq_num(string2ulong(value)); return true;
         case FIELD_collective_scale: pp->setCollective_scale(string2ulong(value)); return true;
         case FIELD_rsbf_seed_list: pp->setRsbf_seed_list(i,string2ulong(value)); return true;
@@ -3123,6 +3120,9 @@ bool GenericAppMsgDescriptor::setFieldValueAsString(void *object, int field, int
         case FIELD_using_elmo: pp->setUsing_elmo(string2bool(value)); return true;
         case FIELD_useful_data_bytes: pp->setUseful_data_bytes(string2long(value)); return true;
         case FIELD_elmo_overhead_pop_bytes: pp->setElmo_overhead_pop_bytes(string2long(value)); return true;
+        case FIELD_rdmc_source_server_id: pp->setRdmc_source_server_id(string2long(value)); return true;
+        case FIELD_rdmc_source_gpu_id: pp->setRdmc_source_gpu_id(string2long(value)); return true;
+        case FIELD_rdmc_block_number: pp->setRdmc_block_number(string2long(value)); return true;
         default: return false;
     }
 }

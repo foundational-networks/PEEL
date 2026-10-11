@@ -108,6 +108,7 @@ module LSEtherSwitch
 		bool use_power_of_n_lb = default(false);
         int random_power_factor = default(2);
         bool use_per_pkt_lb = default(false);
+        bool use_ina = default(false);
         
         // selective reaction for the CC
         bool apply_selective_net_reaction = default(false);

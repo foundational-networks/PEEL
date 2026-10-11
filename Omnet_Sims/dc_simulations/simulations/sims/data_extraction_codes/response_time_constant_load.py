@@ -273,6 +273,11 @@ for category in CATEGORIES:
                                                 query_id = query_id_list[row_counter - 1]
                                                 query = queries_temp[query_id]
                                                 num_flows_per_query = int(row[k+1])
+                                                if ("rdmc" in category):
+                                                    if ("hier" in category):
+                                                        num_flows_per_query = RDMC_NUM_BLOCKS * (int(ml_query_scale/ml_num_gpus) - 1)
+                                                    else:
+                                                        num_flows_per_query = RDMC_NUM_BLOCKS * (ml_query_scale - 1)
                                                 if ("optireduce" in category):
                                                     if ("mcast" in category):
                                                         # In reduce phase, every node records scale-1 and then broadcasts to all hosts/not nodes
