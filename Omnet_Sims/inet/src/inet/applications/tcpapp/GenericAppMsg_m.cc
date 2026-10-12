@@ -962,6 +962,7 @@ GenericAppMsg::~GenericAppMsg()
     delete [] this->all_jump_to_idx;
     delete [] this->rsbf_seed_list;
     delete [] this->rsbf_bitstream_list;
+    delete [] this->involved_servers_list;
 }
 
 GenericAppMsg& GenericAppMsg::operator=(const GenericAppMsg& other)
@@ -1097,6 +1098,13 @@ void GenericAppMsg::copy(const GenericAppMsg& other)
     this->using_elmo = other.using_elmo;
     this->useful_data_bytes = other.useful_data_bytes;
     this->elmo_overhead_pop_bytes = other.elmo_overhead_pop_bytes;
+    this->is_last_pkt = other.is_last_pkt;
+    delete [] this->involved_servers_list;
+    this->involved_servers_list = (other.involved_servers_list_arraysize==0) ? nullptr : new unsigned long[other.involved_servers_list_arraysize];
+    involved_servers_list_arraysize = other.involved_servers_list_arraysize;
+    for (size_t i = 0; i < involved_servers_list_arraysize; i++) {
+        this->involved_servers_list[i] = other.involved_servers_list[i];
+    }
 }
 
 void GenericAppMsg::parsimPack(omnetpp::cCommBuffer *b) const
@@ -1165,6 +1173,9 @@ void GenericAppMsg::parsimPack(omnetpp::cCommBuffer *b) const
     doParsimPacking(b,this->using_elmo);
     doParsimPacking(b,this->useful_data_bytes);
     doParsimPacking(b,this->elmo_overhead_pop_bytes);
+    doParsimPacking(b,this->is_last_pkt);
+    b->pack(involved_servers_list_arraysize);
+    doParsimArrayPacking(b,this->involved_servers_list,involved_servers_list_arraysize);
 }
 
 void GenericAppMsg::parsimUnpack(omnetpp::cCommBuffer *b)
@@ -1299,6 +1310,15 @@ void GenericAppMsg::parsimUnpack(omnetpp::cCommBuffer *b)
     doParsimUnpacking(b,this->using_elmo);
     doParsimUnpacking(b,this->useful_data_bytes);
     doParsimUnpacking(b,this->elmo_overhead_pop_bytes);
+    doParsimUnpacking(b,this->is_last_pkt);
+    delete [] this->involved_servers_list;
+    b->unpack(involved_servers_list_arraysize);
+    if (involved_servers_list_arraysize == 0) {
+        this->involved_servers_list = nullptr;
+    } else {
+        this->involved_servers_list = new unsigned long[involved_servers_list_arraysize];
+        doParsimArrayUnpacking(b,this->involved_servers_list,involved_servers_list_arraysize);
+    }
 }
 
 B GenericAppMsg::getExpectedReplyLength() const
@@ -2560,6 +2580,87 @@ void GenericAppMsg::setElmo_overhead_pop_bytes(int elmo_overhead_pop_bytes)
     this->elmo_overhead_pop_bytes = elmo_overhead_pop_bytes;
 }
 
+bool GenericAppMsg::getIs_last_pkt() const
+{
+    return this->is_last_pkt;
+}
+
+void GenericAppMsg::setIs_last_pkt(bool is_last_pkt)
+{
+    handleChange();
+    this->is_last_pkt = is_last_pkt;
+}
+
+size_t GenericAppMsg::getInvolved_servers_listArraySize() const
+{
+    return involved_servers_list_arraysize;
+}
+
+unsigned long GenericAppMsg::getInvolved_servers_list(size_t k) const
+{
+    if (k >= involved_servers_list_arraysize) throw omnetpp::cRuntimeError("Array of size involved_servers_list_arraysize indexed by %lu", (unsigned long)k);
+    return this->involved_servers_list[k];
+}
+
+void GenericAppMsg::setInvolved_servers_listArraySize(size_t newSize)
+{
+    handleChange();
+    unsigned long *involved_servers_list2 = (newSize==0) ? nullptr : new unsigned long[newSize];
+    size_t minSize = involved_servers_list_arraysize < newSize ? involved_servers_list_arraysize : newSize;
+    for (size_t i = 0; i < minSize; i++)
+        involved_servers_list2[i] = this->involved_servers_list[i];
+    for (size_t i = minSize; i < newSize; i++)
+        involved_servers_list2[i] = 0;
+    delete [] this->involved_servers_list;
+    this->involved_servers_list = involved_servers_list2;
+    involved_servers_list_arraysize = newSize;
+}
+
+void GenericAppMsg::setInvolved_servers_list(size_t k, unsigned long involved_servers_list)
+{
+    if (k >= involved_servers_list_arraysize) throw omnetpp::cRuntimeError("Array of size  indexed by %lu", (unsigned long)k);
+    handleChange();
+    this->involved_servers_list[k] = involved_servers_list;
+}
+
+void GenericAppMsg::insertInvolved_servers_list(size_t k, unsigned long involved_servers_list)
+{
+    handleChange();
+    if (k > involved_servers_list_arraysize) throw omnetpp::cRuntimeError("Array of size  indexed by %lu", (unsigned long)k);
+    size_t newSize = involved_servers_list_arraysize + 1;
+    unsigned long *involved_servers_list2 = new unsigned long[newSize];
+    size_t i;
+    for (i = 0; i < k; i++)
+        involved_servers_list2[i] = this->involved_servers_list[i];
+    involved_servers_list2[k] = involved_servers_list;
+    for (i = k + 1; i < newSize; i++)
+        involved_servers_list2[i] = this->involved_servers_list[i-1];
+    delete [] this->involved_servers_list;
+    this->involved_servers_list = involved_servers_list2;
+    involved_servers_list_arraysize = newSize;
+}
+
+void GenericAppMsg::insertInvolved_servers_list(unsigned long involved_servers_list)
+{
+    insertInvolved_servers_list(involved_servers_list_arraysize, involved_servers_list);
+}
+
+void GenericAppMsg::eraseInvolved_servers_list(size_t k)
+{
+    if (k >= involved_servers_list_arraysize) throw omnetpp::cRuntimeError("Array of size  indexed by %lu", (unsigned long)k);
+    handleChange();
+    size_t newSize = involved_servers_list_arraysize - 1;
+    unsigned long *involved_servers_list2 = (newSize == 0) ? nullptr : new unsigned long[newSize];
+    size_t i;
+    for (i = 0; i < k; i++)
+        involved_servers_list2[i] = this->involved_servers_list[i];
+    for (i = k; i < newSize; i++)
+        involved_servers_list2[i] = this->involved_servers_list[i+1];
+    delete [] this->involved_servers_list;
+    this->involved_servers_list = involved_servers_list2;
+    involved_servers_list_arraysize = newSize;
+}
+
 class GenericAppMsgDescriptor : public omnetpp::cClassDescriptor
 {
   private:
@@ -2617,6 +2718,8 @@ class GenericAppMsgDescriptor : public omnetpp::cClassDescriptor
         FIELD_using_elmo,
         FIELD_useful_data_bytes,
         FIELD_elmo_overhead_pop_bytes,
+        FIELD_is_last_pkt,
+        FIELD_involved_servers_list,
     };
   public:
     GenericAppMsgDescriptor();
@@ -2679,7 +2782,7 @@ const char *GenericAppMsgDescriptor::getProperty(const char *propertyname) const
 int GenericAppMsgDescriptor::getFieldCount() const
 {
     omnetpp::cClassDescriptor *basedesc = getBaseClassDescriptor();
-    return basedesc ? 52+basedesc->getFieldCount() : 52;
+    return basedesc ? 54+basedesc->getFieldCount() : 54;
 }
 
 unsigned int GenericAppMsgDescriptor::getFieldTypeFlags(int field) const
@@ -2743,8 +2846,10 @@ unsigned int GenericAppMsgDescriptor::getFieldTypeFlags(int field) const
         FD_ISEDITABLE,    // FIELD_using_elmo
         FD_ISEDITABLE,    // FIELD_useful_data_bytes
         FD_ISEDITABLE,    // FIELD_elmo_overhead_pop_bytes
+        FD_ISEDITABLE,    // FIELD_is_last_pkt
+        FD_ISARRAY | FD_ISEDITABLE,    // FIELD_involved_servers_list
     };
-    return (field >= 0 && field < 52) ? fieldTypeFlags[field] : 0;
+    return (field >= 0 && field < 54) ? fieldTypeFlags[field] : 0;
 }
 
 const char *GenericAppMsgDescriptor::getFieldName(int field) const
@@ -2808,8 +2913,10 @@ const char *GenericAppMsgDescriptor::getFieldName(int field) const
         "using_elmo",
         "useful_data_bytes",
         "elmo_overhead_pop_bytes",
+        "is_last_pkt",
+        "involved_servers_list",
     };
-    return (field >= 0 && field < 52) ? fieldNames[field] : nullptr;
+    return (field >= 0 && field < 54) ? fieldNames[field] : nullptr;
 }
 
 int GenericAppMsgDescriptor::findField(const char *fieldName) const
@@ -2868,6 +2975,8 @@ int GenericAppMsgDescriptor::findField(const char *fieldName) const
     if (fieldName[0] == 'u' && strcmp(fieldName, "using_elmo") == 0) return base+49;
     if (fieldName[0] == 'u' && strcmp(fieldName, "useful_data_bytes") == 0) return base+50;
     if (fieldName[0] == 'e' && strcmp(fieldName, "elmo_overhead_pop_bytes") == 0) return base+51;
+    if (fieldName[0] == 'i' && strcmp(fieldName, "is_last_pkt") == 0) return base+52;
+    if (fieldName[0] == 'i' && strcmp(fieldName, "involved_servers_list") == 0) return base+53;
     return basedesc ? basedesc->findField(fieldName) : -1;
 }
 
@@ -2932,8 +3041,10 @@ const char *GenericAppMsgDescriptor::getFieldTypeString(int field) const
         "bool",    // FIELD_using_elmo
         "int",    // FIELD_useful_data_bytes
         "int",    // FIELD_elmo_overhead_pop_bytes
+        "bool",    // FIELD_is_last_pkt
+        "unsigned long",    // FIELD_involved_servers_list
     };
-    return (field >= 0 && field < 52) ? fieldTypeStrings[field] : nullptr;
+    return (field >= 0 && field < 54) ? fieldTypeStrings[field] : nullptr;
 }
 
 const char **GenericAppMsgDescriptor::getFieldPropertyNames(int field) const
@@ -2983,6 +3094,7 @@ int GenericAppMsgDescriptor::getFieldArraySize(void *object, int field) const
         case FIELD_all_jump_to_idx: return pp->getAll_jump_to_idxArraySize();
         case FIELD_rsbf_seed_list: return pp->getRsbf_seed_listArraySize();
         case FIELD_rsbf_bitstream_list: return pp->getRsbf_bitstream_listArraySize();
+        case FIELD_involved_servers_list: return pp->getInvolved_servers_listArraySize();
         default: return 0;
     }
 }
@@ -3063,6 +3175,8 @@ std::string GenericAppMsgDescriptor::getFieldValueAsString(void *object, int fie
         case FIELD_using_elmo: return bool2string(pp->getUsing_elmo());
         case FIELD_useful_data_bytes: return long2string(pp->getUseful_data_bytes());
         case FIELD_elmo_overhead_pop_bytes: return long2string(pp->getElmo_overhead_pop_bytes());
+        case FIELD_is_last_pkt: return bool2string(pp->getIs_last_pkt());
+        case FIELD_involved_servers_list: return ulong2string(pp->getInvolved_servers_list(i));
         default: return "";
     }
 }
@@ -3123,6 +3237,8 @@ bool GenericAppMsgDescriptor::setFieldValueAsString(void *object, int field, int
         case FIELD_using_elmo: pp->setUsing_elmo(string2bool(value)); return true;
         case FIELD_useful_data_bytes: pp->setUseful_data_bytes(string2long(value)); return true;
         case FIELD_elmo_overhead_pop_bytes: pp->setElmo_overhead_pop_bytes(string2long(value)); return true;
+        case FIELD_is_last_pkt: pp->setIs_last_pkt(string2bool(value)); return true;
+        case FIELD_involved_servers_list: pp->setInvolved_servers_list(i,string2ulong(value)); return true;
         default: return false;
     }
 }

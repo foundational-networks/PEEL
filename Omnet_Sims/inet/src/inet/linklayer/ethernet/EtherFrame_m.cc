@@ -250,6 +250,7 @@ EthernetMacHeader::~EthernetMacHeader()
     delete [] this->CIDR_core_pkt;
     delete [] this->input_ports_passed;
     delete [] this->affected_addresses;
+    delete [] this->involved_servers_list;
 }
 
 EthernetMacHeader& EthernetMacHeader::operator=(const EthernetMacHeader& other)
@@ -422,6 +423,19 @@ void EthernetMacHeader::copy(const EthernetMacHeader& other)
     this->in_src_sharding = other.in_src_sharding;
     this->using_orca = other.using_orca;
     this->using_elmo = other.using_elmo;
+    this->is_last_pkt = other.is_last_pkt;
+    this->is_pkt_dropped = other.is_pkt_dropped;
+    delete [] this->involved_servers_list;
+    this->involved_servers_list = (other.involved_servers_list_arraysize==0) ? nullptr : new unsigned long[other.involved_servers_list_arraysize];
+    involved_servers_list_arraysize = other.involved_servers_list_arraysize;
+    for (size_t i = 0; i < involved_servers_list_arraysize; i++) {
+        this->involved_servers_list[i] = other.involved_servers_list[i];
+    }
+    this->is_loss_recovery_request = other.is_loss_recovery_request;
+    this->is_loss_recovery_response = other.is_loss_recovery_response;
+    this->dont_drop_again = other.dont_drop_again;
+    this->hierarchical_resent_from_source = other.hierarchical_resent_from_source;
+    this->source_server_idx = other.source_server_idx;
 }
 
 void EthernetMacHeader::parsimPack(omnetpp::cCommBuffer *b) const
@@ -515,6 +529,15 @@ void EthernetMacHeader::parsimPack(omnetpp::cCommBuffer *b) const
     doParsimPacking(b,this->in_src_sharding);
     doParsimPacking(b,this->using_orca);
     doParsimPacking(b,this->using_elmo);
+    doParsimPacking(b,this->is_last_pkt);
+    doParsimPacking(b,this->is_pkt_dropped);
+    b->pack(involved_servers_list_arraysize);
+    doParsimArrayPacking(b,this->involved_servers_list,involved_servers_list_arraysize);
+    doParsimPacking(b,this->is_loss_recovery_request);
+    doParsimPacking(b,this->is_loss_recovery_response);
+    doParsimPacking(b,this->dont_drop_again);
+    doParsimPacking(b,this->hierarchical_resent_from_source);
+    doParsimPacking(b,this->source_server_idx);
 }
 
 void EthernetMacHeader::parsimUnpack(omnetpp::cCommBuffer *b)
@@ -680,6 +703,21 @@ void EthernetMacHeader::parsimUnpack(omnetpp::cCommBuffer *b)
     doParsimUnpacking(b,this->in_src_sharding);
     doParsimUnpacking(b,this->using_orca);
     doParsimUnpacking(b,this->using_elmo);
+    doParsimUnpacking(b,this->is_last_pkt);
+    doParsimUnpacking(b,this->is_pkt_dropped);
+    delete [] this->involved_servers_list;
+    b->unpack(involved_servers_list_arraysize);
+    if (involved_servers_list_arraysize == 0) {
+        this->involved_servers_list = nullptr;
+    } else {
+        this->involved_servers_list = new unsigned long[involved_servers_list_arraysize];
+        doParsimArrayUnpacking(b,this->involved_servers_list,involved_servers_list_arraysize);
+    }
+    doParsimUnpacking(b,this->is_loss_recovery_request);
+    doParsimUnpacking(b,this->is_loss_recovery_response);
+    doParsimUnpacking(b,this->dont_drop_again);
+    doParsimUnpacking(b,this->hierarchical_resent_from_source);
+    doParsimUnpacking(b,this->source_server_idx);
 }
 
 const MacAddress& EthernetMacHeader::getDest() const
@@ -2280,6 +2318,153 @@ void EthernetMacHeader::setUsing_elmo(bool using_elmo)
     this->using_elmo = using_elmo;
 }
 
+bool EthernetMacHeader::getIs_last_pkt() const
+{
+    return this->is_last_pkt;
+}
+
+void EthernetMacHeader::setIs_last_pkt(bool is_last_pkt)
+{
+    handleChange();
+    this->is_last_pkt = is_last_pkt;
+}
+
+bool EthernetMacHeader::getIs_pkt_dropped() const
+{
+    return this->is_pkt_dropped;
+}
+
+void EthernetMacHeader::setIs_pkt_dropped(bool is_pkt_dropped)
+{
+    handleChange();
+    this->is_pkt_dropped = is_pkt_dropped;
+}
+
+size_t EthernetMacHeader::getInvolved_servers_listArraySize() const
+{
+    return involved_servers_list_arraysize;
+}
+
+unsigned long EthernetMacHeader::getInvolved_servers_list(size_t k) const
+{
+    if (k >= involved_servers_list_arraysize) throw omnetpp::cRuntimeError("Array of size involved_servers_list_arraysize indexed by %lu", (unsigned long)k);
+    return this->involved_servers_list[k];
+}
+
+void EthernetMacHeader::setInvolved_servers_listArraySize(size_t newSize)
+{
+    handleChange();
+    unsigned long *involved_servers_list2 = (newSize==0) ? nullptr : new unsigned long[newSize];
+    size_t minSize = involved_servers_list_arraysize < newSize ? involved_servers_list_arraysize : newSize;
+    for (size_t i = 0; i < minSize; i++)
+        involved_servers_list2[i] = this->involved_servers_list[i];
+    for (size_t i = minSize; i < newSize; i++)
+        involved_servers_list2[i] = 0;
+    delete [] this->involved_servers_list;
+    this->involved_servers_list = involved_servers_list2;
+    involved_servers_list_arraysize = newSize;
+}
+
+void EthernetMacHeader::setInvolved_servers_list(size_t k, unsigned long involved_servers_list)
+{
+    if (k >= involved_servers_list_arraysize) throw omnetpp::cRuntimeError("Array of size  indexed by %lu", (unsigned long)k);
+    handleChange();
+    this->involved_servers_list[k] = involved_servers_list;
+}
+
+void EthernetMacHeader::insertInvolved_servers_list(size_t k, unsigned long involved_servers_list)
+{
+    handleChange();
+    if (k > involved_servers_list_arraysize) throw omnetpp::cRuntimeError("Array of size  indexed by %lu", (unsigned long)k);
+    size_t newSize = involved_servers_list_arraysize + 1;
+    unsigned long *involved_servers_list2 = new unsigned long[newSize];
+    size_t i;
+    for (i = 0; i < k; i++)
+        involved_servers_list2[i] = this->involved_servers_list[i];
+    involved_servers_list2[k] = involved_servers_list;
+    for (i = k + 1; i < newSize; i++)
+        involved_servers_list2[i] = this->involved_servers_list[i-1];
+    delete [] this->involved_servers_list;
+    this->involved_servers_list = involved_servers_list2;
+    involved_servers_list_arraysize = newSize;
+}
+
+void EthernetMacHeader::insertInvolved_servers_list(unsigned long involved_servers_list)
+{
+    insertInvolved_servers_list(involved_servers_list_arraysize, involved_servers_list);
+}
+
+void EthernetMacHeader::eraseInvolved_servers_list(size_t k)
+{
+    if (k >= involved_servers_list_arraysize) throw omnetpp::cRuntimeError("Array of size  indexed by %lu", (unsigned long)k);
+    handleChange();
+    size_t newSize = involved_servers_list_arraysize - 1;
+    unsigned long *involved_servers_list2 = (newSize == 0) ? nullptr : new unsigned long[newSize];
+    size_t i;
+    for (i = 0; i < k; i++)
+        involved_servers_list2[i] = this->involved_servers_list[i];
+    for (i = k; i < newSize; i++)
+        involved_servers_list2[i] = this->involved_servers_list[i+1];
+    delete [] this->involved_servers_list;
+    this->involved_servers_list = involved_servers_list2;
+    involved_servers_list_arraysize = newSize;
+}
+
+bool EthernetMacHeader::getIs_loss_recovery_request() const
+{
+    return this->is_loss_recovery_request;
+}
+
+void EthernetMacHeader::setIs_loss_recovery_request(bool is_loss_recovery_request)
+{
+    handleChange();
+    this->is_loss_recovery_request = is_loss_recovery_request;
+}
+
+bool EthernetMacHeader::getIs_loss_recovery_response() const
+{
+    return this->is_loss_recovery_response;
+}
+
+void EthernetMacHeader::setIs_loss_recovery_response(bool is_loss_recovery_response)
+{
+    handleChange();
+    this->is_loss_recovery_response = is_loss_recovery_response;
+}
+
+bool EthernetMacHeader::getDont_drop_again() const
+{
+    return this->dont_drop_again;
+}
+
+void EthernetMacHeader::setDont_drop_again(bool dont_drop_again)
+{
+    handleChange();
+    this->dont_drop_again = dont_drop_again;
+}
+
+bool EthernetMacHeader::getHierarchical_resent_from_source() const
+{
+    return this->hierarchical_resent_from_source;
+}
+
+void EthernetMacHeader::setHierarchical_resent_from_source(bool hierarchical_resent_from_source)
+{
+    handleChange();
+    this->hierarchical_resent_from_source = hierarchical_resent_from_source;
+}
+
+int EthernetMacHeader::getSource_server_idx() const
+{
+    return this->source_server_idx;
+}
+
+void EthernetMacHeader::setSource_server_idx(int source_server_idx)
+{
+    handleChange();
+    this->source_server_idx = source_server_idx;
+}
+
 class EthernetMacHeaderDescriptor : public omnetpp::cClassDescriptor
 {
   private:
@@ -2361,6 +2546,14 @@ class EthernetMacHeaderDescriptor : public omnetpp::cClassDescriptor
         FIELD_in_src_sharding,
         FIELD_using_orca,
         FIELD_using_elmo,
+        FIELD_is_last_pkt,
+        FIELD_is_pkt_dropped,
+        FIELD_involved_servers_list,
+        FIELD_is_loss_recovery_request,
+        FIELD_is_loss_recovery_response,
+        FIELD_dont_drop_again,
+        FIELD_hierarchical_resent_from_source,
+        FIELD_source_server_idx,
     };
   public:
     EthernetMacHeaderDescriptor();
@@ -2423,7 +2616,7 @@ const char *EthernetMacHeaderDescriptor::getProperty(const char *propertyname) c
 int EthernetMacHeaderDescriptor::getFieldCount() const
 {
     omnetpp::cClassDescriptor *basedesc = getBaseClassDescriptor();
-    return basedesc ? 76+basedesc->getFieldCount() : 76;
+    return basedesc ? 84+basedesc->getFieldCount() : 84;
 }
 
 unsigned int EthernetMacHeaderDescriptor::getFieldTypeFlags(int field) const
@@ -2511,8 +2704,16 @@ unsigned int EthernetMacHeaderDescriptor::getFieldTypeFlags(int field) const
         FD_ISEDITABLE,    // FIELD_in_src_sharding
         FD_ISEDITABLE,    // FIELD_using_orca
         FD_ISEDITABLE,    // FIELD_using_elmo
+        FD_ISEDITABLE,    // FIELD_is_last_pkt
+        FD_ISEDITABLE,    // FIELD_is_pkt_dropped
+        FD_ISARRAY | FD_ISEDITABLE,    // FIELD_involved_servers_list
+        FD_ISEDITABLE,    // FIELD_is_loss_recovery_request
+        FD_ISEDITABLE,    // FIELD_is_loss_recovery_response
+        FD_ISEDITABLE,    // FIELD_dont_drop_again
+        FD_ISEDITABLE,    // FIELD_hierarchical_resent_from_source
+        FD_ISEDITABLE,    // FIELD_source_server_idx
     };
-    return (field >= 0 && field < 76) ? fieldTypeFlags[field] : 0;
+    return (field >= 0 && field < 84) ? fieldTypeFlags[field] : 0;
 }
 
 const char *EthernetMacHeaderDescriptor::getFieldName(int field) const
@@ -2600,8 +2801,16 @@ const char *EthernetMacHeaderDescriptor::getFieldName(int field) const
         "in_src_sharding",
         "using_orca",
         "using_elmo",
+        "is_last_pkt",
+        "is_pkt_dropped",
+        "involved_servers_list",
+        "is_loss_recovery_request",
+        "is_loss_recovery_response",
+        "dont_drop_again",
+        "hierarchical_resent_from_source",
+        "source_server_idx",
     };
-    return (field >= 0 && field < 76) ? fieldNames[field] : nullptr;
+    return (field >= 0 && field < 84) ? fieldNames[field] : nullptr;
 }
 
 int EthernetMacHeaderDescriptor::findField(const char *fieldName) const
@@ -2684,6 +2893,14 @@ int EthernetMacHeaderDescriptor::findField(const char *fieldName) const
     if (fieldName[0] == 'i' && strcmp(fieldName, "in_src_sharding") == 0) return base+73;
     if (fieldName[0] == 'u' && strcmp(fieldName, "using_orca") == 0) return base+74;
     if (fieldName[0] == 'u' && strcmp(fieldName, "using_elmo") == 0) return base+75;
+    if (fieldName[0] == 'i' && strcmp(fieldName, "is_last_pkt") == 0) return base+76;
+    if (fieldName[0] == 'i' && strcmp(fieldName, "is_pkt_dropped") == 0) return base+77;
+    if (fieldName[0] == 'i' && strcmp(fieldName, "involved_servers_list") == 0) return base+78;
+    if (fieldName[0] == 'i' && strcmp(fieldName, "is_loss_recovery_request") == 0) return base+79;
+    if (fieldName[0] == 'i' && strcmp(fieldName, "is_loss_recovery_response") == 0) return base+80;
+    if (fieldName[0] == 'd' && strcmp(fieldName, "dont_drop_again") == 0) return base+81;
+    if (fieldName[0] == 'h' && strcmp(fieldName, "hierarchical_resent_from_source") == 0) return base+82;
+    if (fieldName[0] == 's' && strcmp(fieldName, "source_server_idx") == 0) return base+83;
     return basedesc ? basedesc->findField(fieldName) : -1;
 }
 
@@ -2772,8 +2989,16 @@ const char *EthernetMacHeaderDescriptor::getFieldTypeString(int field) const
         "bool",    // FIELD_in_src_sharding
         "bool",    // FIELD_using_orca
         "bool",    // FIELD_using_elmo
+        "bool",    // FIELD_is_last_pkt
+        "bool",    // FIELD_is_pkt_dropped
+        "unsigned long",    // FIELD_involved_servers_list
+        "bool",    // FIELD_is_loss_recovery_request
+        "bool",    // FIELD_is_loss_recovery_response
+        "bool",    // FIELD_dont_drop_again
+        "bool",    // FIELD_hierarchical_resent_from_source
+        "int",    // FIELD_source_server_idx
     };
-    return (field >= 0 && field < 76) ? fieldTypeStrings[field] : nullptr;
+    return (field >= 0 && field < 84) ? fieldTypeStrings[field] : nullptr;
 }
 
 const char **EthernetMacHeaderDescriptor::getFieldPropertyNames(int field) const
@@ -2838,6 +3063,7 @@ int EthernetMacHeaderDescriptor::getFieldArraySize(void *object, int field) cons
         case FIELD_CIDR_core_pkt: return pp->getCIDR_core_pktArraySize();
         case FIELD_input_ports_passed: return pp->getInput_ports_passedArraySize();
         case FIELD_affected_addresses: return pp->getAffected_addressesArraySize();
+        case FIELD_involved_servers_list: return pp->getInvolved_servers_listArraySize();
         default: return 0;
     }
 }
@@ -2948,6 +3174,14 @@ std::string EthernetMacHeaderDescriptor::getFieldValueAsString(void *object, int
         case FIELD_in_src_sharding: return bool2string(pp->getIn_src_sharding());
         case FIELD_using_orca: return bool2string(pp->getUsing_orca());
         case FIELD_using_elmo: return bool2string(pp->getUsing_elmo());
+        case FIELD_is_last_pkt: return bool2string(pp->getIs_last_pkt());
+        case FIELD_is_pkt_dropped: return bool2string(pp->getIs_pkt_dropped());
+        case FIELD_involved_servers_list: return ulong2string(pp->getInvolved_servers_list(i));
+        case FIELD_is_loss_recovery_request: return bool2string(pp->getIs_loss_recovery_request());
+        case FIELD_is_loss_recovery_response: return bool2string(pp->getIs_loss_recovery_response());
+        case FIELD_dont_drop_again: return bool2string(pp->getDont_drop_again());
+        case FIELD_hierarchical_resent_from_source: return bool2string(pp->getHierarchical_resent_from_source());
+        case FIELD_source_server_idx: return long2string(pp->getSource_server_idx());
         default: return "";
     }
 }
@@ -3018,6 +3252,14 @@ bool EthernetMacHeaderDescriptor::setFieldValueAsString(void *object, int field,
         case FIELD_in_src_sharding: pp->setIn_src_sharding(string2bool(value)); return true;
         case FIELD_using_orca: pp->setUsing_orca(string2bool(value)); return true;
         case FIELD_using_elmo: pp->setUsing_elmo(string2bool(value)); return true;
+        case FIELD_is_last_pkt: pp->setIs_last_pkt(string2bool(value)); return true;
+        case FIELD_is_pkt_dropped: pp->setIs_pkt_dropped(string2bool(value)); return true;
+        case FIELD_involved_servers_list: pp->setInvolved_servers_list(i,string2ulong(value)); return true;
+        case FIELD_is_loss_recovery_request: pp->setIs_loss_recovery_request(string2bool(value)); return true;
+        case FIELD_is_loss_recovery_response: pp->setIs_loss_recovery_response(string2bool(value)); return true;
+        case FIELD_dont_drop_again: pp->setDont_drop_again(string2bool(value)); return true;
+        case FIELD_hierarchical_resent_from_source: pp->setHierarchical_resent_from_source(string2bool(value)); return true;
+        case FIELD_source_server_idx: pp->setSource_server_idx(string2long(value)); return true;
         default: return false;
     }
 }
@@ -4043,7 +4285,7 @@ unsigned int EthernetFcsDescriptor::getFieldTypeFlags(int field) const
     }
     static unsigned int fieldTypeFlags[] = {
         FD_ISEDITABLE,    // FIELD_fcs
-        0,    // FIELD_fcsMode
+        FD_ISEDITABLE,    // FIELD_fcsMode
     };
     return (field >= 0 && field < 2) ? fieldTypeFlags[field] : 0;
 }
@@ -4175,6 +4417,7 @@ bool EthernetFcsDescriptor::setFieldValueAsString(void *object, int field, int i
     EthernetFcs *pp = (EthernetFcs *)object; (void)pp;
     switch (field) {
         case FIELD_fcs: pp->setFcs(string2ulong(value)); return true;
+        case FIELD_fcsMode: pp->setFcsMode((inet::FcsMode)string2enum(value, "inet::FcsMode")); return true;
         default: return false;
     }
 }

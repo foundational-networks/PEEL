@@ -219,6 +219,10 @@ inline void doParsimUnpacking(omnetpp::cCommBuffer *b, TwoDInnerList& obj) {obj.
  *     int useful_data_bytes = 0;	// only used for specific techniques such as elmo!
  *     int elmo_overhead_pop_bytes = 0;	// how much to pop from overhead per multicast tree layer!
  * 
+ *     // For SC 2024 Ring based loss recovery for multicast
+ *     bool is_last_pkt = false;	// don't drop this
+ *     unsigned long involved_servers_list[];
+ * 
  * }
  * </pre>
  */
@@ -288,6 +292,9 @@ class INET_API GenericAppMsg : public ::inet::FieldsChunk
     bool using_elmo = false;
     int useful_data_bytes = 0;
     int elmo_overhead_pop_bytes = 0;
+    bool is_last_pkt = false;
+    unsigned long *involved_servers_list = nullptr;
+    size_t involved_servers_list_arraysize = 0;
 
   private:
     void copy(const GenericAppMsg& other);
@@ -469,6 +476,15 @@ class INET_API GenericAppMsg : public ::inet::FieldsChunk
     virtual void setUseful_data_bytes(int useful_data_bytes);
     virtual int getElmo_overhead_pop_bytes() const;
     virtual void setElmo_overhead_pop_bytes(int elmo_overhead_pop_bytes);
+    virtual bool getIs_last_pkt() const;
+    virtual void setIs_last_pkt(bool is_last_pkt);
+    virtual void setInvolved_servers_listArraySize(size_t size);
+    virtual size_t getInvolved_servers_listArraySize() const;
+    virtual unsigned long getInvolved_servers_list(size_t k) const;
+    virtual void setInvolved_servers_list(size_t k, unsigned long involved_servers_list);
+    virtual void insertInvolved_servers_list(unsigned long involved_servers_list);
+    virtual void insertInvolved_servers_list(size_t k, unsigned long involved_servers_list);
+    virtual void eraseInvolved_servers_list(size_t k);
 };
 
 inline void doParsimPacking(omnetpp::cCommBuffer *b, const GenericAppMsg& obj) {obj.parsimPack(b);}

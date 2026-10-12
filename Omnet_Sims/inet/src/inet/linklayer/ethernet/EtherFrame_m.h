@@ -209,6 +209,23 @@ enum EthernetControlOpCode {
  * 
  *     bool using_elmo = false;
  * 
+ *     // For SC 2024 Ring based loss recovery for multicast
+ *     bool is_last_pkt = false;	// don't drop this
+ *     bool is_pkt_dropped = false;
+ *     unsigned long involved_servers_list[];
+ * 
+ *     bool is_loss_recovery_request = false;
+ *     bool is_loss_recovery_response = false;
+ * 
+ *     // for drop notif
+ *     //   	Packet* peel_base_pkt = nullptr;
+ *     bool dont_drop_again = false;
+ * 
+ *    	// hierarchical recovery
+ *     bool hierarchical_resent_from_source = false;
+ * 
+ *     int source_server_idx = -1;
+ * 
  * }
  * </pre>
  */
@@ -303,6 +320,15 @@ class INET_API EthernetMacHeader : public ::inet::FieldsChunk
     bool in_src_sharding = false;
     bool using_orca = false;
     bool using_elmo = false;
+    bool is_last_pkt = false;
+    bool is_pkt_dropped = false;
+    unsigned long *involved_servers_list = nullptr;
+    size_t involved_servers_list_arraysize = 0;
+    bool is_loss_recovery_request = false;
+    bool is_loss_recovery_response = false;
+    bool dont_drop_again = false;
+    bool hierarchical_resent_from_source = false;
+    int source_server_idx = -1;
 
   private:
     void copy(const EthernetMacHeader& other);
@@ -548,6 +574,27 @@ class INET_API EthernetMacHeader : public ::inet::FieldsChunk
     virtual void setUsing_orca(bool using_orca);
     virtual bool getUsing_elmo() const;
     virtual void setUsing_elmo(bool using_elmo);
+    virtual bool getIs_last_pkt() const;
+    virtual void setIs_last_pkt(bool is_last_pkt);
+    virtual bool getIs_pkt_dropped() const;
+    virtual void setIs_pkt_dropped(bool is_pkt_dropped);
+    virtual void setInvolved_servers_listArraySize(size_t size);
+    virtual size_t getInvolved_servers_listArraySize() const;
+    virtual unsigned long getInvolved_servers_list(size_t k) const;
+    virtual void setInvolved_servers_list(size_t k, unsigned long involved_servers_list);
+    virtual void insertInvolved_servers_list(unsigned long involved_servers_list);
+    virtual void insertInvolved_servers_list(size_t k, unsigned long involved_servers_list);
+    virtual void eraseInvolved_servers_list(size_t k);
+    virtual bool getIs_loss_recovery_request() const;
+    virtual void setIs_loss_recovery_request(bool is_loss_recovery_request);
+    virtual bool getIs_loss_recovery_response() const;
+    virtual void setIs_loss_recovery_response(bool is_loss_recovery_response);
+    virtual bool getDont_drop_again() const;
+    virtual void setDont_drop_again(bool dont_drop_again);
+    virtual bool getHierarchical_resent_from_source() const;
+    virtual void setHierarchical_resent_from_source(bool hierarchical_resent_from_source);
+    virtual int getSource_server_idx() const;
+    virtual void setSource_server_idx(int source_server_idx);
 };
 
 inline void doParsimPacking(omnetpp::cCommBuffer *b, const EthernetMacHeader& obj) {obj.parsimPack(b);}
@@ -559,7 +606,7 @@ inline void doParsimUnpacking(omnetpp::cCommBuffer *b, EthernetMacHeader& obj) {
 // }}
 
 /**
- * Class generated from <tt>inet/linklayer/ethernet/EtherFrame.msg:184</tt> by nedtool.
+ * Class generated from <tt>inet/linklayer/ethernet/EtherFrame.msg:201</tt> by nedtool.
  * <pre>
  * //
  * //
@@ -602,7 +649,7 @@ inline void doParsimPacking(omnetpp::cCommBuffer *b, const EthernetControlFrame&
 inline void doParsimUnpacking(omnetpp::cCommBuffer *b, EthernetControlFrame& obj) {obj.parsimUnpack(b);}
 
 /**
- * Class generated from <tt>inet/linklayer/ethernet/EtherFrame.msg:193</tt> by nedtool.
+ * Class generated from <tt>inet/linklayer/ethernet/EtherFrame.msg:210</tt> by nedtool.
  * <pre>
  * //
  * // Ethernet frame used by the PAUSE protocol
@@ -645,7 +692,7 @@ inline void doParsimPacking(omnetpp::cCommBuffer *b, const EthernetPauseFrame& o
 inline void doParsimUnpacking(omnetpp::cCommBuffer *b, EthernetPauseFrame& obj) {obj.parsimUnpack(b);}
 
 /**
- * Class generated from <tt>inet/linklayer/ethernet/EtherFrame.msg:200</tt> by nedtool.
+ * Class generated from <tt>inet/linklayer/ethernet/EtherFrame.msg:217</tt> by nedtool.
  * <pre>
  * class EthernetPadding extends FieldsChunk
  * {
@@ -679,7 +726,7 @@ inline void doParsimPacking(omnetpp::cCommBuffer *b, const EthernetPadding& obj)
 inline void doParsimUnpacking(omnetpp::cCommBuffer *b, EthernetPadding& obj) {obj.parsimUnpack(b);}
 
 /**
- * Class generated from <tt>inet/linklayer/ethernet/EtherFrame.msg:204</tt> by nedtool.
+ * Class generated from <tt>inet/linklayer/ethernet/EtherFrame.msg:221</tt> by nedtool.
  * <pre>
  * class EthernetFcs extends FieldsChunk
  * {

@@ -168,6 +168,23 @@ class EthernetMacHeader extends FieldsChunk
     bool using_orca = false;
     
     bool using_elmo = false;
+    
+   	// For SC 2024 Ring based loss recovery for multicast
+   	bool is_last_pkt = false;	// don't drop this
+   	bool is_pkt_dropped = false;
+   	unsigned long involved_servers_list[];
+   	
+   	bool is_loss_recovery_request = false;
+   	bool is_loss_recovery_response = false;
+   	
+   	// for drop notif
+//   	Packet* peel_base_pkt = nullptr;
+   	bool dont_drop_again = false;
+   	
+   	// hierarchical recovery
+    bool hierarchical_resent_from_source = false;
+    
+    int source_server_idx = -1;
 
 }
 

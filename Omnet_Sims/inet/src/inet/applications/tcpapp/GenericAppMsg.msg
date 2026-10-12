@@ -123,6 +123,10 @@ class GenericAppMsg extends FieldsChunk
     bool using_elmo = false;
    	int useful_data_bytes = 0;	// only used for specific techniques such as elmo!
    	int elmo_overhead_pop_bytes = 0;	// how much to pop from overhead per multicast tree layer!
+   	
+   	// For SC 2024 Ring based loss recovery for multicast
+   	bool is_last_pkt = false;	// don't drop this
+   	unsigned long involved_servers_list[];
 	
 }
 
