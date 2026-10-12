@@ -42,3 +42,7 @@
 	path = Benchmark/gloo
 	url = https://github.com/foundational-networks/gloo.git
 	branch = main
+[submodule "Omnet_Sims/dc_simulations/simulations/sims/peel_workload_ft_bcast_dfrag_50"]
+	path = Omnet_Sims/dc_simulations/simulations/sims/peel_workload_ft_bcast_dfrag_50
+	url = https://github.com/foundational-networks/peel_workload_ft_bcast_dfrag_50.git
+	branch = master
