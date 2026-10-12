@@ -64,4 +64,4 @@ RDMC Broadcast in 8-ary fat-tree | extract_dist_files_ft_bcast_dfsize_50 | run_b
 
 The commands above run each experiment and store the results in ```PEEL/Omnet_Sims/dc_simulations/simulations/sims/extracted_results/archive``` and figures in ```PEEL/Omnet_Sims/dc_simulations/simulations/sims/extracted_results/figs```. We refer you to the **small-scale simulations** section if you would like to validate the RDMC setup and see results in a short time.
 
-The provided run scripts use the `rdmc` configuration by default. The configuration files also include `rdmc_hier` for hierarchical RDMC. To run hierarchical RDMC, refer to comment in the run scripts.
+The provided run scripts use the `rdmc` configuration by default.
