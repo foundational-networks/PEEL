@@ -155,3 +155,10 @@ Real-life datacenter trace experiment | extract_dist_files_ls_traffic_trace_50 |
 
 
 The commands above run each experiment and store the results in ```PEEL/Omnet_Sims/dc_simulations/simulations/sims/extracted_results/archive``` and figures in ```PEEL/Omnet_Sims/dc_simulations/simulations/sims/extracted_results/figs```. Simulating most algorithms is expected to take less than 4 days. However, simulating a collective operation with various algorithms would require weeks. We refer you to the **small-scale simulations** section if you would like to see some results in a short time.
+
+
+---
+
+### Computing per-packet overhead
+
+In ```PEEL/Omnet_Sims/dc_simulations/simulations/sims/scalability```, we have also included python scripts that compute the per-packet overhead of RSBF, BIER-TE, Elmo, and PEEL under various fat-tree network setups.
