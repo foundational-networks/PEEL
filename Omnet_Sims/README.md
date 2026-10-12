@@ -1,13 +1,18 @@
 # Omnet++ simulation files
 
-This repository provides the instructions and files required to run the simulations and extract the results. We use [Omnet++ simulator](https://omnetpp.org/) and INET framework to run the simulations. [Omnet++ manual](https://doc.omnetpp.org/omnetpp/manual/) and its examples are good references for an introduction to the simulator. We ran our simulations on Ubuntu machines (version: 18.04), so all the commands are for Ubuntu. To run the simulations, you should follow the following steps:
+This repository provides the instructions and files required to run the simulations and extract the results. We use the [Omnet++ simulator](https://omnetpp.org/) and INET framework to run the simulations. The [Omnet++ manual](https://doc.omnetpp.org/omnetpp/manual/) and its examples are good references for an introduction to the simulator.
 
-* [Step 1: Install dependencies](#step-1-installing-dependencies) (~ 5 minutes)
-* [Step 2: Install Omnet++](#step-2-installing-omnet)  (~ 5 minutes)
-* [Step 3: Build the project](#step-3-building-the-project) (~ 5 minutes)
-* [Step 4: Run the simulations and extract the results](#small-scale-simulations-extra-step-for-evaluation-in-a-short-time) (This step can take from a few minutes to a few weeks depending on the simulations that you run)
+This branch contains the simulation setup for evaluating PEEL in a hierarchical rail-optimized datacenter topology (HPN).
 
-> **Note:** For both the small-scale “Hello World” example and the complete large-scale simulations, follow Steps 1–5 to install the simulator and set up the experimental environment. After completing these steps, you can either run the [small-scale simulation commands](#small-scale-simulations-extra-step-for-evaluation-in-a-short-time) for quick testing or [execute the large-scale simulation files](#step-4-running-the-large-scale-simulations-and-extracting-the-results) for a comprehensive experimentation.
+We ran our simulations on Ubuntu machines (version: 18.04), so all commands below are for Ubuntu.
+
+To run the simulations, follow these steps:
+
+* [Step 1: Install dependencies](#step-1-installing-dependencies)
+* [Step 2: Install Omnet++](#step-2-installing-omnet)
+* [Step 3: Build the project](#step-3-building-the-project)
+* [Small-scale simulations](#small-scale-simulations-extra-step-for-evaluation-in-a-short-time)
+* [Large-scale simulations](#step-4-running-key-large-scale-simulations-and-extracting-the-results)
 
 ---
 
@@ -26,7 +31,13 @@ sudo apt-get install -y libsqlite3-dev
 sudo apt-get install -y zip unzip
 ```
 
-Make sure you have python3 installed (if not, run ```sudo apt-get install -y python3```). If it is installed and accessible in "/usr/bin/python3" run the following: 
+Make sure you have Python 3 installed. If not, run:
+
+```bash
+sudo apt-get install -y python3
+```
+
+If Python 3 is installed and accessible at `/usr/bin/python3`, run:
 
 ```bash
 sudo rm -rf /usr/bin/python
@@ -39,7 +50,11 @@ sudo apt-get install -y python3-matplotlib
 
 ### Step 2: Installing Omnet++
 
-The complete instructions for installing Omnet++ can be found in [Omnet++ installation guide](https://doc.omnetpp.org/omnetpp/InstallGuide.pdf). **In case you already have the simulator installed, you can skip this step.** To install Omnet++ on an Ubuntu OS, you should run the following commands:
+The complete instructions for installing Omnet++ can be found in the [Omnet++ installation guide](https://doc.omnetpp.org/omnetpp/InstallGuide.pdf).
+
+**If you already have the simulator installed, you can skip this step.**
+
+To install Omnet++ 5.6.2 on Ubuntu:
 
 ```bash
 wget https://github.com/omnetpp/omnetpp/releases/download/omnetpp-5.6.2/omnetpp-5.6.2-src-linux.tgz
@@ -48,18 +63,22 @@ cd omnetpp-5.6.2/
 . setenv
 ```
 
-For the next line we are assuming that you have extracted omnet in $HOME. If this is not true, replace $HOME with the path you have extracted the omnet files to.
+For the next command, we assume that Omnet++ was extracted under `$HOME`. If this is not the case, replace `$HOME` with the appropriate path.
 
 ```bash
 echo "export PATH=$HOME/omnetpp-5.6.2/bin:\$PATH" >> ~/.bashrc
 ```
+
+Then run:
 
 ```bash
 source ~/.bashrc
 ./configure WITH_QTENV=no WITH_OSG=no WITH_OSGEARTH=no
 ```
 
-In case the configure command printed out that "omnetpp-5.6.2/bin" is not added to your path, close and re-open your terminal and run the configure command again. If you are not using GUI, reboot your system using ```sudo reboot```. Make sure you get the **"Your PATH contains /opt/omnetpp-5.6.2/bin. Good!"** message in the configuration process before moving forward.
+If the configure command reports that `omnetpp-5.6.2/bin` is not in your `PATH`, close and reopen the terminal and run the configure command again.
+
+Finally:
 
 ```bash
 make
@@ -69,7 +88,13 @@ make
 
 ### Step 3: Building the project
 
-We have provided a ```build.sh``` shell script to simplify this process. To build the project modules and download the distribution files, run the following script:
+The HPN sample workload is included as a Git submodule. From the root of the PEEL repository, initialize the submodules:
+
+```bash
+git submodule update --init --recursive
+```
+
+We provide a `build.sh` script to build the simulator modules.
 
 ```bash
 cd PEEL/Omnet_Sims/
@@ -80,98 +105,105 @@ bash build.sh
 
 ### Small-scale simulations: Extra step for evaluation in a short time
 
-Every scenario with [large-scale simulation](#step-6-running-the-large-scale-simulations-and-extracting-the-results) configurations takes days or even weeks to complete. Accordingly, we are providing a small-scale sample in which we run a single Broadcast collective with 8 MB messages among 64 nodes and compare the results of various techniques for those interested in evaluating the code in a short time. First, make sure that you are in the right directory ("PEEL/Omnet_Sims/dc_simulations/simulations/sims") and then use the following commands to extract the distribution files, run the simulations, and extract the results:
+We provide a small HPN Broadcast experiment for evaluating the simulator without running the complete large-scale experiments.
 
-```bash
-cd dc_simulations/simulations/sims
-bash extract_dist_files_sample.sh
-./run_sample.sh
-cp data_extraction_codes/* extracted_results/
-cd extracted_results
-./print_results_sample.sh
-```
-
-The commands above download the distribution files for the sample simulations and simulate the following collective algorithms:
+The sample compares the following communication algorithms:
 
 * Ring
 * Binary Tree
 * Optimal multicast
 * Orca
-* Elmo
 * PEEL
 
-Because the sample experiment simulates only a single Broadcast operation, each scenario should complete in less than two minutes. After running the commands above, the Collective Completion Time (CCT) results for all evaluated techniques will be stored in: ```PEEL/Omnet_Sims/dc_simulations/simulations/sims/extracted_results/archive```. Also, the figures are plotted and stored in ```PEEL/Omnet_Sims/dc_simulations/simulations/sims/extracted_results/figs```.
+The sample workload is provided through the `peel_workload_sample_bcast_hpn` Git submodule.
 
-The output should look _similar_ to the following:
+First, move to the simulation directory:
 
+```bash
+cd PEEL/Omnet_Sims/dc_simulations/simulations/sims
 ```
 
+Prepare the HPN workload files:
+
+```bash
+bash extract_dist_files_sample_hpn.sh
+```
+
+Run all five sample configurations and extract the raw simulation statistics:
+
+```bash
+./run_sample_hpn.sh
+```
+
+After the simulations complete, copy the result-processing scripts into the extracted-results directory:
+
+```bash
+cp data_extraction_codes/* extracted_results/
+cd extracted_results
+```
+
+Then compute and print the Collective Completion Time (CCT):
+
+```bash
+./print_results_sample_hpn.sh
+```
+
+The HPN sample uses the configurations defined in:
+
+```text
+omnetpp_bcast_sample_hpn.ini
+```
+
+The five configurations correspond to:
+
+| Configuration | Algorithm |
+| --- | --- |
+| `ring` | Ring |
+| `binary_tree` | Binary Tree |
+| `optimal` | Optimal multicast |
+| `orca` | Orca |
+| `peel` | PEEL |
+
+The processed results are stored in:
+
+```text
+PEEL/Omnet_Sims/dc_simulations/simulations/sims/extracted_results/archive/sample_hpn.txt
+```
+
+The output should look similar to the following:
+
+```text
 ring_bcast
-Mean CCT (s): 0.00140
+Mean CCT (s): 0.000356191
+p99 CCT (s): 0.000356191
+
 
 tree_bcast
-Mean CCT (s): 0.0044
+Mean CCT (s): 0.000619191
+p99 CCT (s): 0.000619191
+
 
 mcast_optimal_bcast
-Mean CCT (s): 0.00018
+Mean CCT (s): 0.000088555
+p99 CCT (s): 0.000088555
+
 
 mcast_bcast_orca
-Mean CCT (s): 0.00080
+Mean CCT (s): 0.000199077
+p99 CCT (s): 0.000199077
 
-mcast_bcast_elmo
-Mean CCT (s): 0.00073
 
 mcast_bcast_peel
-Mean CCT (s): 0.00027
-
+Mean CCT (s): 0.000067544
+p99 CCT (s): 0.000067544
 ```
 
-The results above show that PEEL achieves performance closest to the optimal multicast baseline while outperforming all other techniques.
+The sample contains a single Broadcast operation for each configuration, so the mean and p99 CCT are identical.
 
 ---
 
 ### Step 4: Running key large-scale simulations and extracting the results
 
-The config files for large-scale simulations can be used for evaluating various collective operations and algorithms. To run the large-scale simulations under distinct collective algorithms for a specific collective operation, first make sure that you are in the right directory (```PEEL/Omnet_Sims/dc_simulations/simulations/sims```) and then use the following commands to download the distribution files, run the simulations, extract the results, and plot the figures:
-
-```bash
-bash $DIST_DOWNLOWDER.sh
-./$EXPERIMENT_RUN_FILE.sh
-cp data_extraction_codes/* extracted_results/
-cd extracted_results
-./$EXPERIMENT_PRINT_FILE.sh
-```
-
-The table below summarizes the appropriate ```$DIST_DOWNLOWDER```, ```$EXPERIMENT_RUN_FILE```, and ```$EXPERIMENT_PRINT_FILE``` for distinct experiments:
-
-Experiment | $DIST_DOWNLOWDER | $EXPERIMENT_RUN_FILE | $EXPERIMENT_PRINT_FILE
---- | --- | ---  | --- 
-Broadcast operations in leaf-spine | extract_dist_files_ls_bcast_dfsize_50 | run_bcast_ls_dfsize_50 | print_results_ls_bcast_dfsize_50
-Broadcast operations in 8-ary fat-tree | extract_dist_files_ft_bcast_dfsize_50 | run_bcast_ft_dfsize_50 | print_results_ft_bcast_dfsize_50
-Broadcast operations in 8-ary fat-tree alongside Swift | extract_dist_files_ft_bcast_dfsize_50 | run_bcast_swift_ft_dfsize_50 | print_results_ft_bcast_swift_dfsize_50
-All-Gather operations in leaf-spine | extract_dist_files_ls_allgather_allreduce_dfsize | run_allgather_ls_dfsize | print_results_ls_allgather_dfsize
-All-Gather operations in 8-ary fat-tree | extract_dist_files_ft_allgather_allreduce_dfsize | run_allgather_ft_dfsize | print_results_ft_allgather_dfsize
-All-Reduce operations in leaf-spine | extract_dist_files_ls_allgather_allreduce_dfsize | run_allreduce_ls_dfsize | print_results_ls_allreduce_dfsize
-Real-life datacenter trace experiment | extract_dist_files_ls_traffic_trace_50 | run_traffic_trace_ls_50 | print_results_ls_traffic_trace_50
-
-
-The commands above run each experiment and store the results in ```PEEL/Omnet_Sims/dc_simulations/simulations/sims/extracted_results/archive``` and figures in ```PEEL/Omnet_Sims/dc_simulations/simulations/sims/extracted_results/figs```. Simulating most algorithms is expected to take less than 4 days. However, simulating a collective operation with various algorithms would require weeks. We refer you to the **small-scale simulations** section if you would like to see some results in a short time.
 
 
 ---
-
-### Computing per-packet overhead
-
-In ```PEEL/Omnet_Sims/dc_simulations/simulations/sims/scalability```, we have also included python scripts that compute the per-packet overhead of RSBF, BIER-TE, Elmo, and PEEL under various fat-tree network setups.
-
----
-
-### Other Components and Baselines
-
-In addition to the components available on the `main` branch, our simulator repository includes the following implementations and baselines on separate branches:
-
-- **RDMC (`rdmc` branch):** RDMC constructs a multicast overlay using reliable RDMA unicast transfers and pipelines receiver-side relaying according to a binomial-hypercube schedule. We have implemented RDMC and evaluated it against PEEL.
-
-- **Rail-optimized datacenters (`hpn` branch):** Although our primary focus is on Clos networks, as discussed in the paper, PEEL's design can be extended to other hierarchical topologies, including rail-optimized datacenters. We have simulated these topologies and evaluated PEEL against other algorithms in this setting.
-
-- **PEEL with ring-based loss recovery (`loss_recovery` branch):** We have implemented a ring-based loss-recovery mechanism alongside PEEL to demonstrate its compatibility with existing approaches to multicast reliability.
