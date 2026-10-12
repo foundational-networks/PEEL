@@ -69,6 +69,12 @@ for file_name in onlyfiles:
     frag_perc = None
     if ('_frag' in file_name):
       frag_perc = (file_name.split('_frag')[0]).split('_')[-1]
+    fail_prob = None
+    if ('_fail_' in file_name):
+      fail_prob = (file_name.split('_fail_')[0]).split('_')[-1]
+    random_drop_prob = None
+    if ('_rd' in file_name):
+      random_drop_prob = (file_name.split('_rd')[0]).split('_')[-1]
     # marking_timer = (file_name.split('_mark_')[0]).split('_')[-1]
     # ordering_timer = (file_name.split('_ord')[0]).split('_')[-1]
 
@@ -118,6 +124,14 @@ for file_name in onlyfiles:
         if (frag_perc is not None):
           without_format_input_file_name += '_{}_frag'.format(frag_perc)
           without_format_output_file_name += '_{}_frag'.format(frag_perc)
+
+        if (fail_prob is not None):
+          without_format_input_file_name += '_{}_fail'.format(fail_prob)
+          without_format_output_file_name += '_{}_fail'.format(fail_prob)
+
+        if (random_drop_prob is not None):
+          without_format_input_file_name += '_{}_rd'.format(random_drop_prob)
+          without_format_output_file_name += '_{}_rd'.format(random_drop_prob)
 
         vector_file_name = without_format_input_file_name + ".vec"
         scalar_file_name = without_format_input_file_name + ".sca"
