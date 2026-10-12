@@ -130,7 +130,7 @@ The results above show that PEEL achieves performance closest to the optimal mul
 
 ---
 
-### Step 4: Running the large-scale simulations and extracting the results
+### Step 4: Running key large-scale simulations and extracting the results
 
 The config files for large-scale simulations can be used for evaluating various collective operations and algorithms. To run the large-scale simulations under distinct collective algorithms for a specific collective operation, first make sure that you are in the right directory (```PEEL/Omnet_Sims/dc_simulations/simulations/sims```) and then use the following commands to download the distribution files, run the simulations, extract the results, and plot the figures:
 
