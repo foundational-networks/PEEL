@@ -148,6 +148,7 @@ Experiment | $DIST_DOWNLOWDER | $EXPERIMENT_RUN_FILE | $EXPERIMENT_PRINT_FILE
 --- | --- | ---  | --- 
 Broadcast operations in leaf-spine | extract_dist_files_ls_bcast_dfsize_50 | run_bcast_ls_dfsize_50 | print_results_ls_bcast_dfsize_50
 Broadcast operations in 8-ary fat-tree | extract_dist_files_ft_bcast_dfsize_50 | run_bcast_ft_dfsize_50 | print_results_ft_bcast_dfsize_50
+Broadcast operations in 8-ary fat-tree alongside Swift | extract_dist_files_ft_bcast_dfsize_50 | run_bcast_swift_ft_dfsize_50 | print_results_ft_bcast_swift_dfsize_50
 All-Gather operations in leaf-spine | extract_dist_files_ls_allgather_allreduce_dfsize | run_allgather_ls_dfsize | print_results_ls_allgather_dfsize
 All-Gather operations in 8-ary fat-tree | extract_dist_files_ft_allgather_allreduce_dfsize | run_allgather_ft_dfsize | print_results_ft_allgather_dfsize
 All-Reduce operations in leaf-spine | extract_dist_files_ls_allgather_allreduce_dfsize | run_allreduce_ls_dfsize | print_results_ls_allreduce_dfsize
