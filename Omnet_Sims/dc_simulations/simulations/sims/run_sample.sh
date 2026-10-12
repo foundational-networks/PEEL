@@ -14,6 +14,9 @@ rm -rf results
 # create the directory to save extracted_results
 bash dir_creator.sh
 
+# This script runs RDMC by default.
+# For hierarchical RDMC, use "-c rdmc_hier" instead of "-c rdmc" below and
+# change "do_extract rdmc_bcast" to "do_extract rdmc_hier_bcast".
 
 # RDMC
 echo -e "\n\n-------------------------------------------"
