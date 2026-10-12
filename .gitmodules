@@ -50,3 +50,19 @@
 	path = Omnet_Sims/dc_simulations/simulations/sims/peel_workload_sample_bcast_hpn
 	url = https://github.com/foundational-networks/peel_workload_sample_bcast_hpn.git
 	branch = master
+[submodule "Omnet_Sims/dc_simulations/simulations/sims/peel_workload_hpn_bcast_dfsize_30"]
+	path = Omnet_Sims/dc_simulations/simulations/sims/peel_workload_hpn_bcast_dfsize_30
+	url = https://github.com/foundational-networks/peel_workload_hpn_bcast_dfsize_30.git
+	branch = master
+[submodule "Omnet_Sims/dc_simulations/simulations/sims/peel_workload_hpn_bcast_dfsize_50"]
+	path = Omnet_Sims/dc_simulations/simulations/sims/peel_workload_hpn_bcast_dfsize_50
+	url = https://github.com/foundational-networks/peel_workload_hpn_bcast_dfsize_50.git
+	branch = master
+[submodule "Omnet_Sims/dc_simulations/simulations/sims/peel_workload_hpn_allgather_allreduce_dfsize_50"]
+	path = Omnet_Sims/dc_simulations/simulations/sims/peel_workload_hpn_allgather_allreduce_dfsize_50
+	url = https://github.com/foundational-networks/peel_workload_hpn_allgather_allreduce_dfsize_50.git
+	branch = master
+[submodule "Omnet_Sims/dc_simulations/simulations/sims/peel_workload_hpn_bcast_dfsize_70"]
+	path = Omnet_Sims/dc_simulations/simulations/sims/peel_workload_hpn_bcast_dfsize_70
+	url = https://github.com/foundational-networks/peel_workload_hpn_bcast_dfsize_70.git
+	branch = master
