@@ -204,6 +204,24 @@ The sample contains a single Broadcast operation for each configuration, so the 
 
 ### Step 4: Running key large-scale simulations and extracting the results
 
+The config files for large-scale simulations can be used for evaluating various collective operations and algorithms in the HPN topology. To run the large-scale simulations under distinct collective algorithms for a specific collective operation, first make sure that you are in the right directory (`PEEL/Omnet_Sims/dc_simulations/simulations/sims`) and then use the following commands to extract the distribution files, run the simulations, extract the results, and plot the figures:
 
+```bash
+bash $DIST_EXTRACTOR.sh
+./$EXPERIMENT_RUN_FILE.sh
+cp data_extraction_codes/* extracted_results/
+cd extracted_results
+./$EXPERIMENT_PRINT_FILE.sh
+```
+
+The table below summarizes the appropriate `$DIST_EXTRACTOR`, `$EXPERIMENT_RUN_FILE`, and `$EXPERIMENT_PRINT_FILE` for each experiment:
+
+Experiment | $DIST_EXTRACTOR | $EXPERIMENT_RUN_FILE | $EXPERIMENT_PRINT_FILE
+--- | --- | --- | ---
+Broadcast operations in HPN | extract_dist_files_hpn_bcast_dfsize_50 | run_bcast_hpn_dfsize_50 | print_results_hpn_bcast_dfsize_50
+All-Gather operations in HPN | extract_dist_files_hpn_allgather_allreduce_dfsize | run_allgather_hpn_dfsize | print_results_hpn_allgather_dfsize
+All-Reduce operations in HPN | extract_dist_files_hpn_allgather_allreduce_dfsize | run_allreduce_hpn_dfsize | print_results_hpn_allreduce_dfsize
+
+The commands above run each experiment and store the results in `PEEL/Omnet_Sims/dc_simulations/simulations/sims/extracted_results/archive` and figures in `PEEL/Omnet_Sims/dc_simulations/simulations/sims/extracted_results/figs`. Large-scale simulations can take significantly longer than the sample experiment. We refer you to the **small-scale simulations** section if you would like to evaluate the simulator in a shorter amount of time.
 
 ---
