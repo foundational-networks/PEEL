@@ -243,6 +243,7 @@ void V2PIFO::initialize(int stage) {
     }
 
     use_pfc = getAncestorPar("use_pfc");
+    use_ina = getAncestorPar("use_ina");
 
     if (use_pfc) {
         EV << "Using pfc" << endl;
@@ -568,9 +569,9 @@ int V2PIFO::extract_collective_alg(Packet *packet) {
     if (m_collective_alg > 0)
         return m_collective_alg;
 
-    throw cRuntimeError("Unknown alg type!");
-//    if (use_ina)
-//        return BCAST_INA;
+
+    if (use_ina)
+        return BCAST_INA;
     return 0;
 }
 
@@ -1000,7 +1001,9 @@ void V2PIFO::pushPacket(Packet *packet, cGate *gate)
             casted_relay_module->free_buffer_capacity -= b(packet->getBitLength());
             B pfc_thresh = calc_pfc_thresh(casted_relay_module->free_buffer_capacity);
 
-            if (input_queue_module->neighbor_pfc_status == PFC_RESUME &&
+            // don't generate pfc for INA
+            if (m_collective_alg != BCAST_INA &&
+                    input_queue_module->neighbor_pfc_status == PFC_RESUME &&
                     input_queue_module->pfc_bytes_counter >= pfc_thresh) {
     //        if (true) {
                 std::string input_mac_name = switch_path + ".eth[" + std::to_string(input_port_idx) + "].mac";

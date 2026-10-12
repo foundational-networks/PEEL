@@ -99,9 +99,9 @@ class INET_API V2PIFO : public PacketQueue
     simtime_t last_packet_popped_time = 0;
 
     // ina
-    enum CollectiveAlgTypes { BCAST_SINGLE_SENDER = 1, BCAST_BINOMIAL_TREE, BCAST_BINARY_TREE, BCAST_RING, BCAST_NETWORK_ASSISTED, BCAST_INA, BCAST_OPTIREDUCE, BCAST_PARTIAL_MULTICAST};
+    enum CollectiveAlgTypes { BCAST_SINGLE_SENDER = 1, BCAST_BINOMIAL_TREE, BCAST_BINARY_TREE, BCAST_RING, BCAST_NETWORK_ASSISTED, BCAST_INA};
     int extract_collective_alg(Packet *packet);
-
+    bool use_ina = false;
 
   public:
     b CCThresh = b(-1);

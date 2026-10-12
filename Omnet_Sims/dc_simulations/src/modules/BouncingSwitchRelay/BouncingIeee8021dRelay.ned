@@ -54,9 +54,6 @@ simple BouncingIeee8021dRelay like IMacRelayUnit
 
         bool hasStp;
         bool learn_mac_addresses;
-        
-        int ina_aggregation_pool_capacity_bytes = default(0);
-        int dcqcn_mtu = default(1500);
 
     gates:
         input ifIn;

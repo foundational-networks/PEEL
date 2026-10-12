@@ -77,11 +77,11 @@ simple UDPLongAllgatherInitiatorApp like IApp
         double stopOperationExtraTime @unit(s) = default(-1s);    // extra time after lifecycle stop operation finished
         double stopOperationTimeout @unit(s) = default(2s);    // timeout value for lifecycle stop operation
 
-		int dscp = default(-1); // if not -1, set the DSCP field (on IPv4/IPv6) of sent packets to this value
+        int dscp = default(-1); // if not -1, set the DSCP field (on IPv4/IPv6) of sent packets to this value
         string multicastInterface = default("");  // if not empty, set the multicast output interface option on the socket (interface name expected)
         bool receiveBroadcast = default(false); // if true, makes the socket receive broadcast packets
         bool joinLocalMulticastGroups = default(false); // if true, makes the socket receive packets from all multicast groups set on local interfaces
-		
+
         string distibutions_base_root = default("./");
         string collective_alg_type_str = default("");	// setting the collective alg
         string collective_type_str = default("");	// setting the collective
@@ -89,89 +89,86 @@ simple UDPLongAllgatherInitiatorApp like IApp
         int num_flows_per_ml_query = default(-1);
         volatile int flow_size @unit(B);
         double flow_size_multiplier = default(1);
-        double inter_arrival_time_multiplier = default(1);        
+        double inter_arrival_time_multiplier = default(1);
         double frag_ratio = default(-1);
-        
+
         int mss = default(-1); // in bytes
         int packet_creation_batch_size = default(-1);
-        
+
         int num_gpus = default(1);
         bool mcast_in_host = default(false);
-                
+
         double initiation_delay_mean = default(0);
         double initiation_delay_stddev = default(0);
-        
+
         // failure for ace
         int failure_perc = default(-1);
         int lookahead = default(-1);
-        
+
         // should we reduce in source before sending with ace
         bool ace_apply_src_reduce = default(false);
-        
+
         // for the case of combinational collectives
         bool using_ace = default(false);
-        
+
         // LB
         string lb_granularity_str = default("flow");	// flow, packet
         int lb_tree_num = default(1);
         string lb_tree_select_type_str = default("random"); // random, roundrobin
-        
+
         int splitted_subflow_num = default(-1);
-        
+
         int num_servers = default(-1);	// num servers under each leaf!
-        
+
         // optireduce
         int optireduce_incast_factor = default(-1);
         bool use_becca_optireduce = default(false);
-        
+
         // orca
         bool use_orca = default(false);
         double orca_controller_delay_mean = default(0);
         double orca_controller_delay_stddev = default(0);
-        
+
         // rsbf
         bool use_rsbf = default(false);
         string rsbf_bytes = default("0,0,0");
-    	int rsbf_hash_num = default(0);
-        
-        // elmo
-        bool use_elmo = default(false);
-        
+        int rsbf_hash_num = default(0);
+
         bool use_fattree = default(false);
         int k = default(-1);
-        
+
         bool use_hpn = default(false);
-        
+
+        int num_segments_per_pod = default(-1);
+        int num_aggs_per_plane = default(-1);
+        int num_pods = default(-1);
+        int num_servers_per_segment = default(-1);
         // num leafs in leaf spine
         int num_spines = default(-1);
         int num_aggs = default(-1);
-                
+
         // use tree initiation/termination packet
         bool initiate_tree = default(false);
         int tree_id_overhead_bytes = default(8);
-        
+
         // Cepheus
         bool use_cepheus = default(false);
-        
+
         int nvlink_speed_gbps = default(7200); // 900 GBps
-        
+
         bool partial_mcast_chunk_data = default(false);
         bool partial_mcast_chunk_tors = default(false);
-        
+
         bool partial_mcast_programmable_cores = default(false);
         bool partial_mcast_divide_tors_among_cores = default(false);
-        
+
         // CIDR
         bool partial_mcast_use_cidr_agg = default(false);
         bool partial_mcast_use_cidr_core = default(false);
         string cidr_type_str = default("full_tree");
 
         double random_fail_prob = default(-1);
-        
-        // autoccl
-        bool use_autoccl = default(false);
-    	bool autoccl_allreduce_only = default(false);
-        
+
         @signal[requestSent]();
         @signal[flowNum]();
         @signal[replyLengths]();
@@ -179,9 +176,7 @@ simple UDPLongAllgatherInitiatorApp like IApp
         @signal[controllerDelay]();
         @signal[flowStartedCollectiveType]();
         @signal[flowStartedCollectiveAlg]();
-        @signal[autocclChosenCollectiveAlg]();
-        @signal[autocclChosenCollective]();
-        
+
         @statistic[requestSentRequesterID](title="request sent requester id"; source="requestSent"; record=vector; interpolationmode=none);
         @statistic[flowNumPerQuery](title="Number of flows per ml query"; source="flowNum"; record=vector; interpolationmode=none);
         @statistic[replyLengthAsked](title="reply length of the packets"; source="replyLengths"; record=vector; interpolationmode=none);
@@ -189,8 +184,7 @@ simple UDPLongAllgatherInitiatorApp like IApp
         @statistic[flowStartCollectiveType](title="flow started collective type"; source="flowStartedCollectiveType"; record=vector; interpolationmode=none);
         @statistic[flowStartCollectiveAlg](title="flow started collective algorithm"; source="flowStartedCollectiveAlg"; record=vector; interpolationmode=none);
         @statistic[controllerDelay](title="Orca's controller delay"; source="controllerDelay"; record=vector; interpolationmode=none);
-        @statistic[autocclChosenCollectiveAlg](title="AutoCCL's chosen collective algorithms"; source="autocclChosenCollectiveAlg"; record=vector; interpolationmode=none);
-        @statistic[autocclChosenCollective](title="AutoCCL's chosen collective"; source="autocclChosenCollective"; record=vector; interpolationmode=none);
+
     gates:
         input socketIn @labels(TcpCommand/up);
         output socketOut @labels(TcpCommand/down);

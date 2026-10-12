@@ -76,18 +76,22 @@ BouncingIeee8021dRelay::~BouncingIeee8021dRelay()
     recordScalar("lightInRelayPacketDropCounter", light_in_relay_packet_drop_counter);
     recordScalar("lightTreeCounter", tree_ids_set.size());
     recordScalar("maxSimultaneousTrees", max_simultaneous_trees);
-
+    unsigned int remaining_pkt_count = 0;
+    for (auto it1 = query_seqnum_to_pkt_map.begin();
+            it1 != query_seqnum_to_pkt_map.end();
+            it1++) {
+        remaining_pkt_count++;
+        delete it1->second;
+    }
+    if (remaining_pkt_count > 0) {
+        std::cout << getFullPath() << " --> " << remaining_pkt_count << " pkts remaining!!" << endl;
+    }
+    query_seqnum_to_pkt_map.clear();
+    query_seqnum_count.clear();
     tree_ids_set.clear();
 
     if (failed_ports.size() > 0)
         std::cout << getFullPath() << " still has " << failed_ports.size() << " failed ports!" << endl;
-
-    for (auto query_seqnum_to_port_pkt_itr : query_seqnum_to_port_pkt_map) {
-        for (auto port_pkt_itr : query_seqnum_to_port_pkt_itr.second)
-            delete port_pkt_itr.second;
-        query_seqnum_to_port_pkt_itr.second.clear();
-    }
-    query_seqnum_to_port_pkt_map.clear();
 }
 
 static int callback_incremental_deployment(void *data, int argc, char **argv, char **azColName){
@@ -258,6 +262,7 @@ void BouncingIeee8021dRelay::initialize(int stage)
         use_power_of_n_lb = getAncestorPar("use_power_of_n_lb");
         random_power_factor = getAncestorPar("random_power_factor");
         use_per_pkt_lb = getAncestorPar("use_per_pkt_lb");
+        use_ina = getAncestorPar("use_ina");
         processing_delay_mean = getAncestorPar("processing_delay_mean");
         processing_delay_stddev = getAncestorPar("processing_delay_stddev");
 
@@ -270,6 +275,10 @@ void BouncingIeee8021dRelay::initialize(int stage)
         num_servers_under_each_leaf = int(getAncestorPar("num_servers"));
         num_spines = int(getAncestorPar("num_spines"));   // num spines
         num_leafs = int(getAncestorPar("num_aggs"));     // num leafs
+        if (use_ina && num_gpus <= 0)
+            throw cRuntimeError("use_ina && num_gpus <= 0");
+        if (use_ina && num_servers_under_each_leaf <= 0)
+            throw cRuntimeError("use_ina && num_servers_under_each_leaf <= 0");
 
         if (processing_delay_mean > 0 && processing_delay_stddev > 0) {
 
@@ -282,20 +291,18 @@ void BouncingIeee8021dRelay::initialize(int stage)
                 reduction_delay = delay;
                 break;
             }
-        } else if (processing_delay_mean > 0) {
-            reduction_delay = processing_delay_mean;
         }
 
 //        use_host_assisted_routing = getAncestorPar("use_host_assisted_routing");
 //        if (use_host_assisted_routing && !use_ecmp)
 //            throw cRuntimeError("ecmp should also be enabled with use_host_assisted_routing");
 
-        if ((!use_ecmp && !use_power_of_n_lb && !use_per_pkt_lb)) {
+        if ((!use_ecmp && !use_power_of_n_lb && !use_per_pkt_lb && !use_ina)) {
             // TODO if you want to have the option to don't use no LB, comment out this if.
             throw cRuntimeError("No load balancing technique used. Are you sure you want this?");
         }
 
-        if (int(use_ecmp) + int(use_power_of_n_lb) + int(use_per_pkt_lb) > 1)
+        if (int(use_ecmp) + int(use_power_of_n_lb) + int(use_per_pkt_lb) + int(use_ina) > 1)
             throw cRuntimeError("More than one LB technique is chosen.");
 
         learn_mac_addresses = par("learn_mac_addresses");
@@ -504,25 +511,20 @@ void BouncingIeee8021dRelay::initialize(int stage)
         use_fattree = bool(getAncestorPar("use_fattree"));
         fattree_k = int(getAncestorPar("k"));
 
+        use_hpn = bool(getAncestorPar("use_hpn"));
+        if (use_hpn) {
+            num_tors_per_segment = int(getAncestorPar("num_tors_per_segment"));
+            num_segments_per_pod = int(getAncestorPar("num_segments_per_pod"));
+            num_servers_per_segment = int(getAncestorPar("num_servers_per_segment"));
+            num_aggs_per_plane = int(getAncestorPar("num_aggs_per_plane"));
+        }
+
         initiate_tree = bool(getAncestorPar("initiate_tree"));
 
         partial_mcast_programmable_cores = bool(getAncestorPar("partial_mcast_programmable_cores"));
 
         partial_mcast_use_cidr_agg = bool(getAncestorPar("partial_mcast_use_cidr_agg"));
         partial_mcast_use_cidr_core = bool(getAncestorPar("partial_mcast_use_cidr_core"));
-
-        // INA
-        mtu_bytes = int(par("dcqcn_mtu"));
-        int ina_aggregation_pool_capacity_bytes = int(par("ina_aggregation_pool_capacity_bytes"));
-        if (ina_aggregation_pool_capacity_bytes > 0) {
-            if (mtu_bytes < 1500) {
-                std::cout << "mtu_bytes: " << mtu_bytes << endl;
-                throw cRuntimeError("mtu < 1500 B ... if you are sure about this, comment this out!");
-            }
-            ina_aggregation_pool_spots_remaining = std::ceil(ina_aggregation_pool_capacity_bytes * 1.0 / mtu_bytes);
-            ina_aggregation_pool_spots_max = ina_aggregation_pool_spots_remaining;
-            EV << "ina_aggregation_pool_spots max cap: " << ina_aggregation_pool_spots_remaining << endl;
-        }
 
         // For incremental deployment we want this for all switches
         if (incremental_deployment || getParentModule()->getIndex() == 0) {
@@ -895,64 +897,12 @@ const uint64_t string_to_mac(std::string const& s) {
         );
 }
 
-bool BouncingIeee8021dRelay::ina_all_shards_received(int leaf_aggregation_num,
-        int spine_aggregation_num,
-        int core_aggregation_num,
-        int shard_num) {
-
-    if (isSwitchToR()) {
-        if (leaf_aggregation_num < shard_num) {
-            std::cout << leaf_aggregation_num << endl;
-            std::cout << shard_num << endl;
-            throw cRuntimeError("leaf_aggregation_num < shard_num");
-        }
-        EV << leaf_aggregation_num - shard_num << " shards remaining!" << endl;
-        return leaf_aggregation_num == shard_num;
-    } else if (isSwitchAggregate()) {
-        if (spine_aggregation_num < shard_num) {
-            std::cout << spine_aggregation_num << endl;
-            std::cout << shard_num << endl;
-            throw cRuntimeError("spine_aggregation_num < shard_num");
-        }
-        EV << spine_aggregation_num - shard_num << " shards remaining!" << endl;
-        return spine_aggregation_num == shard_num;
-    } else if (use_fattree && isSwitchCore()) {
-        if (core_aggregation_num < shard_num) {
-            std::cout << core_aggregation_num << endl;
-            std::cout << shard_num << endl;
-            throw cRuntimeError("core_aggregation_num < shard_num");
-        }
-        EV << core_aggregation_num - shard_num << " shards remaining!" << endl;
-        return core_aggregation_num == shard_num;
-    }
-
-    throw cRuntimeError("Unknown switch type!");
-}
-
 void BouncingIeee8021dRelay::handleAndDispatchFrame(Packet *packet)
 {
-
-    std::string packet_name = packet->getName();
     b packet_position = packet->getFrontOffset();
     packet->setFrontIteratorPosition(b(0));
     auto& phy_header = packet->removeAtFront<EthernetPhyHeader>();
     const auto& frame2 = packet->removeAtFront<EthernetMacHeader>();
-
-    bool using_ina = (packet_name.compare("data") == 0 && frame2->getCollective_alg() == BCAST_INA);
-    if (using_ina) {
-        if (num_gpus <= 0)
-            throw cRuntimeError("using_ina && num_gpus <= 0");
-        if (num_servers_under_each_leaf <= 0)
-            throw cRuntimeError("using_ina && num_servers_under_each_leaf <= 0");
-        if (use_fattree) {
-            if (fattree_k <= 0)
-                throw cRuntimeError("fattree_k <= 0");
-        } else {
-            if (num_leafs <= 0 || num_spines <= 0)
-                throw cRuntimeError("num_leafs <= 0 || num_spines <= 0");
-        }
-    }
-
     int hop_count = frame2->getHop_count();
     hop_count++;
     unsigned long m_query_id = frame2->getQuery_id();
@@ -978,42 +928,18 @@ void BouncingIeee8021dRelay::handleAndDispatchFrame(Packet *packet)
         learn(frame->getSrc(), arrivalInterfaceId);
     }
 
-    // if it is tree up, wait to get all the shards to start aggregating!
-    // if we are going down, we don't need to aggregate!
-    if (using_ina &&
-            tree_direction == TREE_UP) {
+    std::string packet_name = packet->getName();
+    if (use_ina && packet_name.compare("data") == 0 && tree_direction == TREE_UP) {
         if (m_query_id == 0)
             throw cRuntimeError("m_query_id == 0");
         std::pair<unsigned long, unsigned long> query_seqnum_pair = std::make_pair(m_query_id, m_seq_num);
-        auto query_seqnum_found_itr = query_seqnum_to_port_pkt_map.find(query_seqnum_pair);
-        if (query_seqnum_found_itr == query_seqnum_to_port_pkt_map.end()) {
-            std::map<InterfaceEntry*, Packet*> port_pkt_map;
-            query_seqnum_to_port_pkt_map.insert(std::make_pair(query_seqnum_pair, port_pkt_map));
-            query_seqnum_found_itr = query_seqnum_to_port_pkt_map.find(query_seqnum_pair);
+        auto query_seqnum_found_itr = query_seqnum_to_portlist_map.find(query_seqnum_pair);
+        if (query_seqnum_found_itr == query_seqnum_to_portlist_map.end()) {
+            std::set<InterfaceEntry*> tmp_port_list;
+            query_seqnum_to_portlist_map.insert(std::make_pair(query_seqnum_pair, tmp_port_list));
+            query_seqnum_found_itr = query_seqnum_to_portlist_map.find(query_seqnum_pair);
         }
-
-        query_seqnum_found_itr->second.insert(std::make_pair(arrivalInterface, packet));
-
-        if (!ina_all_shards_received(frame2->getIna_leaf_aggregation_num(),
-                frame2->getIna_spine_aggregation_num(),
-                frame2->getIna_core_aggregation_num(),
-                query_seqnum_found_itr->second.size())) {
-            EV << "Still waiting for more shards...!" << endl;
-        } else {
-            // keep the original packet and pass it up/down!
-            EV << "All shards received... start reduction!" << endl;
-
-            double extra_reduction_delay = get_processing_delay();
-            EV << "reduction delay is " << extra_reduction_delay << endl;
-            simtime_t now = simTime();
-            cMessage *timeoutMsg = new cMessage("custom_delay");
-            timeoutMsg->setKind(PASS);
-            timeoutMsg->addPar("query_id") = m_query_id;
-            timeoutMsg->addPar("seq_num") = m_seq_num;
-            scheduleAt(now + extra_reduction_delay, timeoutMsg);
-
-        }
-        return;
+        query_seqnum_found_itr->second.insert(arrivalInterface);
     }
 
     //TODO revise next "if"s: 2nd drops all packets for me if not forwarding port; 3rd sends up when dest==STP_MULTICAST_ADDRESS; etc.
@@ -1046,7 +972,7 @@ void BouncingIeee8021dRelay::handleAndDispatchFrame(Packet *packet)
         std::list<int> outputInterfaceId = macTable->getInterfaceIdForAddress(frame->getDest());
         EV << "Found " << outputInterfaceId.size() << " potential next hops for " << frame->getDest().str() << endl;
         // not ace and Not known -> broadcast
-        if (!using_ina && !using_ace && outputInterfaceId.size() == 0 && random_fail_prob <= 0) {
+        if (!use_ina && !using_ace && outputInterfaceId.size() == 0 && random_fail_prob <= 0) {
 
             for (int start_idx = 0; start_idx < frame->getPorts_to_dest_idxArraySize(); start_idx++) {
                 EV << "start_from_idx is " << start_idx << endl;
@@ -1068,14 +994,14 @@ void BouncingIeee8021dRelay::handleAndDispatchFrame(Packet *packet)
             }
 
 
-            EV_DETAIL << "Destination address = " << frame->getDest() << " unknown, broadcasting frame " << frame << endl;
+            EV << "Destination address = " << frame->getDest() << " unknown, broadcasting frame " << frame << endl;
             throw cRuntimeError("1)Destination address not known. Broadcasting the frame. For DCs based on you're setting this shouldn't happen.");
             broadcast(packet, arrivalInterfaceId);
         }
         else {
             //for (std::list<int>::iterator it=outputInterfaceId.begin(); it != outputInterfaceId.end(); ++it){
             //NOTE: HERE I USED the first path
-            if (using_ace || using_ina) {
+            if (using_ace || use_ina) {
                 chooseDispatchType(packet, nullptr);
             } else {
                 if (outputInterfaceId.size() != 0 || random_fail_prob <= 0) {
@@ -1144,9 +1070,68 @@ bool BouncingIeee8021dRelay::packet_has_host_instructions(Packet *packet) {
     return (ethHeader->getPorts_to_dest_idxArraySize() > 0);
 }
 
-double BouncingIeee8021dRelay::get_processing_delay() {
+void BouncingIeee8021dRelay::ina_pass_message(int tree_direction,
+        unsigned long query_id,
+        unsigned long seq_num) {
 
-    if (reduction_delay <= 0)
+    EV << "Passing message -- tree_dir: " << tree_direction <<
+            ", query_id: " << query_id <<
+            ", seq num: " << seq_num << endl;
+
+    // get info...
+    std::pair<unsigned long, unsigned long> query_seqnum_pair =
+                std::make_pair(query_id, seq_num);
+    auto pkt_map_for_query_seqnum_itr =
+            query_seqnum_to_pkt_map.find(query_seqnum_pair);
+    auto query_seqnum_found_itr = query_seqnum_to_portlist_map.find(query_seqnum_pair);
+
+    if (tree_direction == TREE_UP) {
+        EV << "Passing message when tree_direction == TREE_UP" << endl;
+        auto m_pkt = pkt_map_for_query_seqnum_itr->second;
+        auto ethHeader = m_pkt->peekAtFront<EthernetMacHeader>();
+        std::list<int> destInterfaceIds = macTable->getInterfaceIdForAddress(ethHeader->getDest());
+        destInterfaceIds.sort();
+        int portNum = destInterfaceIds.size();
+        std::string query_id_str = std::to_string(query_id);
+        unsigned long query_hash = header_hash(query_id_str);
+        int outputPortNum = query_hash % portNum;
+        EV << "SEPEHR: output port number is: " << outputPortNum << endl;
+        std::list<int>::iterator it = destInterfaceIds.begin();
+        std::advance(it, outputPortNum);
+        EV << "SEPEHR: output interface ID is: " << *it << endl;
+        auto ie2 = ifTable->getInterfaceById(*it);
+        // since we only send each message once, no need to create copies
+        dispatch(m_pkt, ie2);
+    }
+    else if (tree_direction == TREE_DOWN) {
+        EV << "Passing message when tree_direction == TREE_DOWN" << endl;
+        EV << "Sending packets to " << query_seqnum_found_itr->second.size() <<
+                " ports they came from originally" << endl;
+        for (auto port_itr = query_seqnum_found_itr->second.begin();
+                port_itr != query_seqnum_found_itr->second.end();
+                port_itr++) {
+            // create duplicates since we are generating multiple copies
+            dispatch(pkt_map_for_query_seqnum_itr->second->dup(), (*port_itr));
+        }
+        // delete the original message now
+        delete pkt_map_for_query_seqnum_itr->second;
+    } else
+        throw cRuntimeError("Unknown tree direction!");
+
+    query_seqnum_to_pkt_map.erase(pkt_map_for_query_seqnum_itr);
+    query_seqnum_count.erase(query_seqnum_pair);
+    // remove if all bytes for the query are received
+    if (tree_direction == TREE_DOWN) {
+        query_seqnum_to_portlist_map.erase(query_seqnum_found_itr);
+    }
+}
+
+double BouncingIeee8021dRelay::get_processing_delay(int tree_direction) {
+
+    if (tree_direction == TREE_DOWN)
+        return 0;
+
+    if (processing_delay_mean <= 0 || processing_delay_stddev <= 0 || reduction_delay <= 0)
         throw cRuntimeError("Invalid reduction dleay!!");
 
     return reduction_delay;
@@ -1169,6 +1154,22 @@ int BouncingIeee8021dRelay::get_port_dir(std::string switch_path, int port_idx) 
         }
         if (switch_path.find("edge[") != std::string::npos) {
             if (port_idx < num_servers_under_each_leaf * num_gpus)
+                throw cRuntimeError("Failed/Recovered link is toward a source!! How?");
+            return PORTDIR_UPSTREAM;
+        }
+    } else if (use_hpn) {
+        // hpn TODO: might not be used but for now just adding it!
+        if (switch_path.find("core[") != std::string::npos) {
+            return PORTDIR_DOWNSTREAM;
+        }
+        if (switch_path.find("agg[") != std::string::npos) {
+            if (port_idx < int(num_tors_per_segment / 2) * num_segments_per_pod)
+                return PORTDIR_DOWNSTREAM;
+            else
+                return PORTDIR_UPSTREAM;
+        }
+        if (switch_path.find("edge[") != std::string::npos) {
+            if (port_idx < num_servers_per_segment)
                 throw cRuntimeError("Failed/Recovered link is toward a source!! How?");
             return PORTDIR_UPSTREAM;
         }
@@ -1281,6 +1282,8 @@ void BouncingIeee8021dRelay::fail_or_recover_message_received(Packet* pkt, int p
             if (switch_path.find("edge[") != std::string::npos) {
                 throw cRuntimeError("2) Edge has become disconnected from the DC!");
             }
+        } else if (use_hpn) {
+            throw cRuntimeError("Failure not implemented for HPN yet!");
         } else {
             // leaf spine
             if (switch_path.find("spine[") != std::string::npos) {
@@ -1418,6 +1421,8 @@ void BouncingIeee8021dRelay::notif_link_failure_or_recovery_to_neighbors(int por
                 std::cout << switch_path << endl;
                 throw cRuntimeError("Edge has become disconnected from the DC!");
             }
+        }  else if (use_hpn) {
+            throw cRuntimeError("Failure scenario is not implemented for HPN yet!");
         } else {
             // leaf spine
             if (switch_path.find("spine[") != std::string::npos) {
@@ -1450,9 +1455,12 @@ void BouncingIeee8021dRelay::handleSelfMessage(cMessage *message) {
     // this is over-written to support INA
     EV << "BouncingIeee8021dRelay::handleSelfMessage" << endl;
     if (message->getKind() == PASS) {
+        if (!use_ina)
+            throw cRuntimeError("Reduction delay added while not using INA...!");
+        int tree_direction = message->par("tree_direction").longValue();
         unsigned long query_id = message->par("query_id").longValue();
         unsigned long seq_num = message->par("seq_num").longValue();
-        forward_packet_based_on_ina(nullptr, query_id, seq_num);
+        ina_pass_message(tree_direction, query_id, seq_num);
         delete message;
         return;
     } else if (message->getKind() == RECOVER_LINK) {
@@ -1504,347 +1512,123 @@ void BouncingIeee8021dRelay::handleSelfMessage(cMessage *message) {
     LayeredProtocolBase::handleSelfMessage(message);
 }
 
-BouncingIeee8021dRelay* BouncingIeee8021dRelay::get_upstream_switch_realy(unsigned long query_id,
-        unsigned long seq_num,
-        int leaf_aggregation_num,
-        int spine_aggregation_num,
-        int core_aggregation_num) {
-
-    Enter_Method("get_upstream_switch_realy");
-
-    std::string query_seqnum_str;
-    if (use_ecmp) {
-        // we have one aggregation tree per query
-        query_seqnum_str = std::to_string(query_id);
-    } else if (use_per_pkt_lb) {
-        // we have multiple aggregation tree --> different packets of a flow might traverse different aggregation trees
-        query_seqnum_str = std::to_string(query_id) + "_" + std::to_string(seq_num);
-    } else
-        throw cRuntimeError("invalid LB for ina!");
-
-    std::string topo_path = getParentModule()->getParentModule()->getFullPath();
-    std::string relay_module_path;
-    if (isSwitchToR()) {
-        query_seqnum_str += "_tor";
-        if (spine_aggregation_num <= 1 && core_aggregation_num <= 1)
-            // not going to upstream
-            return nullptr;
-        unsigned long query_seqnum_hash = header_hash(query_seqnum_str);
-        if (use_fattree) {
-            int port_num = int(fattree_k / 2.0);
-            int aggregate_index = query_seqnum_hash % port_num;
-            relay_module_path = topo_path + ".agg[" +
-                    std::to_string(aggregate_index) + "].relayUnit";
-        } else {
-            int port_num = num_spines;
-            int spine_index = query_seqnum_hash % port_num;
-            relay_module_path = topo_path + ".spine[" +
-                    std::to_string(spine_index) + "].relayUnit";
-        }
-    } else if (isSwitchAggregate()) {
-        query_seqnum_str += "_spine";
-        if (use_fattree) {
-            if (core_aggregation_num <= 1)
-                // not going to upstream
-                return nullptr;
-
-            int port_num = int(fattree_k / 2.0);
-            unsigned long query_seqnum_hash = header_hash(query_seqnum_str);
-            int core_index = query_seqnum_hash % port_num;
-
-            relay_module_path = topo_path + ".core[" +
-                    std::to_string(core_index) + "].relayUnit";
-        } else
-            // no upstream
-            return nullptr;
-    } else if (isSwitchCore())
-        // no upstream
-        return nullptr;
-
-    auto upstream_realy = check_and_cast<BouncingIeee8021dRelay*>(getModuleByPath(relay_module_path.c_str()));
-    EV << "Upstream for " << getFullPath() << " is " << upstream_realy->getFullPath() << endl;
-    return upstream_realy;
-}
-
-bool BouncingIeee8021dRelay::ina_has_free_aggregation_pool_spots(unsigned long query_id,
-        unsigned long seq_num,
-        int leaf_aggregation_num,
-        int spine_aggregation_num,
-        int core_aggregation_num) {
-
-    Enter_Method("ina_has_free_aggregation_pool_spots");
-    EV << "BouncingIeee8021dRelay::ina_has_free_aggregation_pool_spots" << endl;
-
-    // we cannot check ina_aggregation_pool_spots_remaining because it changes through time
-    if (ina_aggregation_pool_spots_max <= 0) {
-        std::cout << ina_aggregation_pool_spots_max << endl;
-        throw cRuntimeError("Invalid ina_aggregation_pool_spots_max");
-    }
-
-    std::string queryid_seqnum_str = std::to_string(query_id) + "_" + std::to_string(seq_num);
-    if (ina_aggregation_pool_allocations.find(queryid_seqnum_str) !=
-            ina_aggregation_pool_allocations.end()) {
-        EV << "Already allocated an spot to this" << endl;
-        return true;
-    }
-
-    if (ina_aggregation_pool_spots_remaining <= 0)
-        return false;
-
-    BouncingIeee8021dRelay* upstream_relay = get_upstream_switch_realy(query_id, seq_num,
-            leaf_aggregation_num,
-            spine_aggregation_num,
-            core_aggregation_num);
-    if (upstream_relay != nullptr) {
-        return upstream_relay->ina_has_free_aggregation_pool_spots(query_id, seq_num,
-                leaf_aggregation_num,
-                spine_aggregation_num,
-                core_aggregation_num);
-    }
-
-    return true;
-
-}
-
-void BouncingIeee8021dRelay::ina_allocate_free_aggregation_pool_spots(unsigned long query_id,
-        unsigned long seq_num,
-        int leaf_aggregation_num,
-        int spine_aggregation_num,
-        int core_aggregation_num) {
-
-    // allready checked we can allocate... now allocate
-
-    Enter_Method("ina_allocate_free_aggregation_pool_spots");
-    EV << "BouncingIeee8021dRelay::ina_allocate_free_aggregation_pool_spots" << endl;
-
-    std::string queryid_seqnum_str = std::to_string(query_id) + "_" + std::to_string(seq_num);
-    if (ina_aggregation_pool_allocations.find(queryid_seqnum_str) !=
-            ina_aggregation_pool_allocations.end()) {
-        EV << "2) Already allocated an spot to this" << endl;
-        return;
-    }
-
-    if (ina_aggregation_pool_spots_remaining <= 0)
-        throw cRuntimeError("No spot is left to be allocated!");
-
-    BouncingIeee8021dRelay* upstream_relay = get_upstream_switch_realy(query_id, seq_num,
-            leaf_aggregation_num,
-            spine_aggregation_num,
-            core_aggregation_num);
-    if (upstream_relay != nullptr) {
-        // allocate in upstreams
-        upstream_relay->ina_allocate_free_aggregation_pool_spots(query_id, seq_num,
-                leaf_aggregation_num,
-                spine_aggregation_num,
-                core_aggregation_num);
-    }
-
-    // allocate in us
-    ina_aggregation_pool_allocations.insert(queryid_seqnum_str);
-    ina_aggregation_pool_spots_remaining--;
-
-}
-
-void BouncingIeee8021dRelay::forward_packet_based_on_ina(Packet *packet,
-        unsigned long query_id,
-        unsigned long seq_num) {
+void BouncingIeee8021dRelay::forward_packet_based_on_ina(Packet *packet, int portNum) {
     EV << "BouncingIeee8021dRelay::forward_packet_based_on_ina" << endl;
 
-    // set tree direction accordingly
-    int tree_direction;
-    if (packet == nullptr) {
-        // packet is traversing up after reduction
-        tree_direction = TREE_UP;
-        std::pair<unsigned long, unsigned long> query_seqnum_pair =
-                        std::make_pair(query_id, seq_num);
-        auto query_seqnum_found_itr = query_seqnum_to_port_pkt_map.find(query_seqnum_pair);
-        if (query_seqnum_found_itr == query_seqnum_to_port_pkt_map.end()) {
-            std::cout << query_id << endl;
-            std::cout << seq_num << endl;
-            throw cRuntimeError("INA: query id and seq num information does not exist!");
-        }
+    if (use_fattree)
+        throw cRuntimeError("INA is not yet deployed with fattree");
 
-        // get a copy of one of the packets in the aggregation group as a candidate packet
-        packet = query_seqnum_found_itr->second.begin()->second->dup();
+    if (use_hpn)
+            throw cRuntimeError("INA is not yet deployed with HPN");
 
-        auto frame = packet->peekAtFront<EthernetMacHeader>();
-        if (frame->getQuery_id() != query_id ||
-                frame->getSeq_num() != seq_num)
-            throw cRuntimeError("frame->getQuery_id() != query_id || frame->getSeq_num() != seq_num");
-    } else {
-        // read info from packet
-        // reduction result is traversing down
-        auto frame = packet->peekAtFront<EthernetMacHeader>();
-        tree_direction = frame->getTree_direction();
-        if (tree_direction != TREE_DOWN)
-            throw cRuntimeError("The packet must be on tree down path by now!");
-        query_id = frame->getQuery_id();
-        seq_num = frame->getSeq_num();
-    }
+    // read info from packet
+    auto eth_header = packet->peekAtFront<EthernetMacHeader>();
+    int tree_direction = eth_header->getTree_direction();
+    unsigned long query_id = eth_header->getQuery_id();
+    unsigned long seq_num = eth_header->getSeq_num();
+//    unsigned long total_bytes = (eth_header->getTotal_length().get() / 8.0);
+//    unsigned int rcvd_bytes = (eth_header->getPayload_length().get() / 8.0);
+    unsigned int collective_scale = eth_header->getCollective_scale();
+    if (collective_scale <= 0)
+        throw cRuntimeError("collective_scale <= 0");
+    int hop_count = eth_header->getHop_count();
 
-    if (packet == nullptr)
-        throw cRuntimeError("packet should not be nullptr at this point!");
+    EV << "Packet info -- tree_dir: " << tree_direction <<
+            ", query id: " << query_id <<
+            ", seq num: " << seq_num <<
+            ", collective scale: " << collective_scale <<
+            ", hop count: " << hop_count << endl;
 
-    auto frame = packet->peekAtFront<EthernetMacHeader>();
+    EV << "Port num is " << portNum << endl;
 
+    std::pair<unsigned long, unsigned long> query_seqnum_pair =
+            std::make_pair(query_id, seq_num);
 
-    // if tree_direction == TREE_UP, check if we reached the highest tree layer
-    int base_port_idx = -1;
-    int port_num = -1;
-
-
-    std::string query_seqnum_str;
-    if (use_ecmp) {
-        // we have one aggregation tree per query
-        query_seqnum_str = std::to_string(query_id);
-    } else if (use_per_pkt_lb) {
-        // we have multiple aggregation tree --> different packets of a flow might traverse different aggregation trees
-        query_seqnum_str = std::to_string(query_id) + "_" + std::to_string(seq_num);
-    } else
-        throw cRuntimeError("invalid LB for ina!");
-
+    // compute the sender num before updating the direction
+    int sender_num = 1; // how many nodes are sending to use for reduction? for tree down sender num is always one
     if (tree_direction == TREE_UP) {
+        if (hop_count == 1) {
+            // we are at the leaf level, the number of senders are num_servers_under_each_leaf * num_gpus
+            sender_num = num_servers_under_each_leaf * num_gpus;
+        } else if (hop_count == 2) {
+            // we are at the spine level
+            if (collective_scale % (num_servers_under_each_leaf * num_gpus) != 0)
+                throw cRuntimeError("collective_scale should fully utilize racks!");
+            sender_num = collective_scale / (num_servers_under_each_leaf * num_gpus);
+        } else
+            throw cRuntimeError("How is hopcount neither 2 nor 1");
+    }
+    EV << "Sender num is " << sender_num << endl;
 
-        if (isSwitchToR()) {
+    int original_tree_direction = tree_direction;
 
-            query_seqnum_str += "_tor";
-            if (frame->getIna_spine_aggregation_num() <= 1 &&
-                    frame->getIna_core_aggregation_num() <= 1) {
+    // run checks
+    auto portlist_found_itr = query_seqnum_to_portlist_map.find(query_seqnum_pair);
+    if (portlist_found_itr == query_seqnum_to_portlist_map.end())
+        throw cRuntimeError("how is query id not present in query_to_portlist_map");
 
-                EV << "Packet has reached the highest node in the reduction tree" << endl;
-                b packetPosition = packet->getFrontOffset();
-                packet->setFrontIteratorPosition(b(0));
-                auto phyHeader = packet->removeAtFront<EthernetPhyHeader>();
-                auto ethHeader = packet->removeAtFront<EthernetMacHeader>();
+    if (seq_num <= 0)
+        throw cRuntimeError("Invalid seq num!");
 
-                ethHeader->setTree_direction(TREE_DOWN);
-                tree_direction = TREE_DOWN;
-
-                packet->insertAtFront(ethHeader);
-                packet->insertAtFront(phyHeader);
-                packet->setFrontIteratorPosition(packetPosition);
-
-            } else {
-
-                // the first num_servers_under_each_leaf * num_gpus ports are connected to downstream gpus
-                base_port_idx = num_servers_under_each_leaf * num_gpus;
-                if (use_fattree) {
-                    port_num = int(fattree_k / 2.0);
-                } else {
-                    port_num = num_spines;
-                }
-
-            }
-        } else if (isSwitchAggregate()) {
-
-            query_seqnum_str += "_spine";
-            if (frame->getIna_core_aggregation_num() <= 1) {
-
-                EV << "2) Packet has reached the highest node in the reduction tree" << endl;
-                b packetPosition = packet->getFrontOffset();
-                packet->setFrontIteratorPosition(b(0));
-                auto phyHeader = packet->removeAtFront<EthernetPhyHeader>();
-                auto ethHeader = packet->removeAtFront<EthernetMacHeader>();
-
-                ethHeader->setTree_direction(TREE_DOWN);
-                tree_direction = TREE_DOWN;
-
-                packet->insertAtFront(ethHeader);
-                packet->insertAtFront(phyHeader);
-                packet->setFrontIteratorPosition(packetPosition);
-
-            } else {
-
-                if (use_fattree) {
-                    // the first k/2 to downstream tors
-                    base_port_idx = int(fattree_k / 2.0);
-                    port_num = int(fattree_k / 2.0);
-                } else
-                    throw cRuntimeError("How are we going up in spine layer in two-tier leaf-spine!");
-
-            }
-        } else if (isSwitchCore()) {
-
-            query_seqnum_str += "_core";
-            EV << "3) Packet has reached the highest node in the reduction tree" << endl;
-            b packetPosition = packet->getFrontOffset();
-            packet->setFrontIteratorPosition(b(0));
-            auto phyHeader = packet->removeAtFront<EthernetPhyHeader>();
-            auto ethHeader = packet->removeAtFront<EthernetMacHeader>();
-
-            ethHeader->setTree_direction(TREE_DOWN);
-            tree_direction = TREE_DOWN;
-
-            packet->insertAtFront(ethHeader);
-            packet->insertAtFront(phyHeader);
-            packet->setFrontIteratorPosition(packetPosition);
-
-        }
+    // update info
+    // this just works for LS not fattree
+    if (tree_direction == TREE_UP && hop_count == 2) {
+        EV << "We've reached the spine layer! Updating direction to TREE_DOWN" << endl;
+        b packetPosition = packet->getFrontOffset();
+        packet->setFrontIteratorPosition(b(0));
+        auto phyHeader = packet->removeAtFront<EthernetPhyHeader>();
+        auto ethHeader = packet->removeAtFront<EthernetMacHeader>();
+        ethHeader->setTree_direction(TREE_DOWN);
+        tree_direction = TREE_DOWN;
+        packet->insertAtFront(ethHeader);
+        packet->insertAtFront(phyHeader);
+        packet->setFrontIteratorPosition(packetPosition);
     }
 
-    // now forward packet
-
-    if (tree_direction == TREE_UP) {
-
-        EV << "Forwarding packet up" << endl;
-        if (port_num <= 0 || base_port_idx < 0)
-            throw cRuntimeError("port_num <= 0 || base_port_idx <= 0");
-        unsigned long query_seqnum_hash = header_hash(query_seqnum_str);
-        int port_offset = query_seqnum_hash % port_num;
-        int port_idx = base_port_idx + port_offset;
-        EV << "Forwarding to port " << port_idx << endl;
-        InterfaceEntry *ie = ifTable->getInterface(port_idx);
-        dispatch(packet, ie);
-
-    } else if (tree_direction == TREE_DOWN) {
-
-        EV << "Forwarding original packets down" << endl;
-
-        // delete the original packet, we always set a duplicate up so coming down, we already have
-        // originals stored in the switch
-        delete packet;
-
-        std::pair<unsigned long, unsigned long> query_seqnum_pair =
-                        std::make_pair(query_id, seq_num);
-        auto query_seqnum_found_itr = query_seqnum_to_port_pkt_map.find(query_seqnum_pair);
-        if (query_seqnum_found_itr == query_seqnum_to_port_pkt_map.end()) {
-            std::cout << query_id << endl;
-            std::cout << seq_num << endl;
-            throw cRuntimeError("2) INA: query id and seq num information does not exist!");
+    // update received bytes for each subflows
+    auto query_seqnum_found_itr =
+            query_seqnum_to_pkt_map.find(query_seqnum_pair);
+    if (query_seqnum_found_itr == query_seqnum_to_pkt_map.end()) {
+        if (tree_direction == TREE_DOWN || portNum > 1) {
+            /*
+             * add the packet as the representative only if we are either going down meaning that we are
+             * distributing
+             * or we are going up and portNum > 1 which means that the packet was meant to pass the spines
+             */
+            EV << "inserting new info in query_seqnum_to_pkt_map for query: " <<
+                    query_id << " and seqnum: " << seq_num << endl;
+            query_seqnum_to_pkt_map.insert(std::make_pair(query_seqnum_pair, packet->dup()));
+            query_seqnum_count.insert(std::make_pair(query_seqnum_pair, 0));
         }
-
-        for (auto port_pkt_itr : query_seqnum_found_itr->second) {
-            EV << "Forwarding a copy down to port " << port_pkt_itr.first->getIndex() << endl;
-
-            // set the tree direction for original packets to tree_down
-            auto packet_to_send_down = port_pkt_itr.second;
-            b packetPosition = packet_to_send_down->getFrontOffset();
-            packet_to_send_down->setFrontIteratorPosition(b(0));
-            auto phyHeader = packet_to_send_down->removeAtFront<EthernetPhyHeader>();
-            auto ethHeader = packet_to_send_down->removeAtFront<EthernetMacHeader>();
-
-            ethHeader->setTree_direction(TREE_DOWN);
-
-            packet_to_send_down->insertAtFront(ethHeader);
-            packet_to_send_down->insertAtFront(phyHeader);
-            packet_to_send_down->setFrontIteratorPosition(packetPosition);
-
-            dispatch(packet_to_send_down, port_pkt_itr.first);
-        }
-        query_seqnum_found_itr->second.clear();
-        query_seqnum_to_port_pkt_map.erase(query_seqnum_found_itr);
-
-        // free up allocation
-        if (ina_aggregation_pool_allocations.find(std::to_string(query_id) + "_" + std::to_string(seq_num)) !=
-                ina_aggregation_pool_allocations.end()) {
-            // for the first packet, this is not in the list
-            ina_aggregation_pool_allocations.erase(std::to_string(query_id) + "_" + std::to_string(seq_num));
-            ina_aggregation_pool_spots_remaining++;
-        }
-        if (ina_aggregation_pool_spots_remaining > ina_aggregation_pool_spots_max)
-            throw cRuntimeError("How is ina_aggregation_pool_spots_remaining > ina_aggregation_pool_spots_max");
-
     }
+    auto query_seqnum_count_itr = query_seqnum_count.find(query_seqnum_pair);
+    query_seqnum_count_itr->second++;
+
+    EV << "Sender num: " << sender_num << ", Number of the pkts with this info: " << query_seqnum_count_itr->second << endl;
+
+    if (query_seqnum_count_itr->second > sender_num)
+        throw cRuntimeError("The number of seq_nums should never surpass sender_num");
+
+    bool should_pass = false;
+    if (query_seqnum_count_itr->second == sender_num) {
+        EV << "seq num received from all senders! PASS..." << endl;
+        should_pass = true;
+    }
+
+    if (should_pass) {
+        EV << "Passing message..." << endl;
+        // if the original tree direction is up, the processing delay should not be zero
+        double reduction_delay = get_processing_delay(original_tree_direction);
+        EV << "reduction delay is " << reduction_delay << endl;
+        simtime_t now = simTime();
+        cMessage *timeoutMsg = new cMessage("custom_delay");
+        timeoutMsg->setKind(PASS);
+        timeoutMsg->addPar("tree_direction") = tree_direction;
+        timeoutMsg->addPar("query_id") = query_id;
+        timeoutMsg->addPar("seq_num") = seq_num;
+        scheduleAt(now + reduction_delay, timeoutMsg);
+    }
+    delete packet;
 }
 
 bool BouncingIeee8021dRelay::orca_should_send_to_agent(Packet *packet) {
@@ -1869,7 +1653,7 @@ bool BouncingIeee8021dRelay::orca_should_send_to_agent(Packet *packet) {
         return false;
 
     std::string switch_path = switch_module->getFullPath();
-    if (use_fattree) {
+    if (use_fattree || use_hpn) {
         // do not react if not in edge
         if (switch_path.find("edge[") == std::string::npos)
             return false;
@@ -1880,6 +1664,52 @@ bool BouncingIeee8021dRelay::orca_should_send_to_agent(Packet *packet) {
     }
 
     return true;
+}
+
+int BouncingIeee8021dRelay::orca_get_agg_spray(Packet *packet, int output_port_idx) {
+    auto ethHeader = packet->peekAtFront<EthernetMacHeader>();
+    std::string pkt_name = packet->getName();
+
+    if (!use_hpn)
+        return -1;
+
+    if (!ethHeader->getUsing_orca())
+        return -1;
+
+    // pkt is not data
+    if (!isPacketAppropriateForMulticast(pkt_name))
+        return -1;
+
+    // data is not sent to agent when tree is already initiated
+    if (initiate_tree && pkt_name.compare("data") == 0)
+        return -1;
+
+    if (ethHeader->getOrca_pkt_seen_agent())
+        return -1;
+
+    // switch is not aggregate
+    std::string switch_path = switch_module->getFullPath();
+    if (switch_path.find("agg[") == std::string::npos)
+        return -1;
+
+    int downstream_port_count = num_segments_per_pod * (num_tors_per_segment / 2);
+
+    // port is upstream
+    if (output_port_idx >= downstream_port_count)
+        return -1;
+
+    int range_low = (output_port_idx / (num_tors_per_segment / 2)) * (num_tors_per_segment / 2);
+    int range_high = range_low + (num_tors_per_segment / 2) - 1;
+
+    std::random_device rd;                          // Non-deterministic seed
+    std::mt19937 gen(rd());                         // Mersenne Twister engine
+    std::uniform_int_distribution<> dist(range_low, range_high);    // Range: [0, 10]
+    int random_output_idx = dist(gen);
+
+//    std::cout<<"switch path: "<<switch_path<<endl;
+//    std::cout<<"range: [ "<<range_low<<" , "<<range_high<<" ]"<<endl;
+//    std::cout<<"changing from "<<output_port_idx<<" to "<<random_output_idx<<endl;
+    return random_output_idx;
 }
 
 void BouncingIeee8021dRelay::filter_rsbf_header(Packet *packet) {
@@ -1920,6 +1750,8 @@ void BouncingIeee8021dRelay::filter_rsbf_header(Packet *packet) {
                 std::cout << "Hop count: " << ethHeader->getHop_count() << endl;
                 throw cRuntimeError("FAT-TREE: Hop count not supported for RSBF!");
         }
+    } else if (use_hpn) {
+        throw cRuntimeError("RSBF not implemented for HPN");
     } else {
         // leaf-spine
         switch(ethHeader->getHop_count()) {
@@ -1987,7 +1819,11 @@ void BouncingIeee8021dRelay::fw_rsbf_based(Packet *packet,
         throw cRuntimeError("candidate_start_from_idx < 0");
     }
 
-    if (!use_fattree && (num_spines < 0 || num_leafs < 0 ||
+    if (use_hpn) {
+        throw cRuntimeError("RSBF not implemented for HPN!");
+    }
+
+    if (!use_fattree && !use_hpn && (num_spines < 0 || num_leafs < 0 ||
             num_servers_under_each_leaf < 0 || num_gpus < 0))
         throw cRuntimeError("Invalid Leaf-Spine parameters...!");
 
@@ -2050,6 +1886,8 @@ void BouncingIeee8021dRelay::fw_rsbf_based(Packet *packet,
             default:
                 throw cRuntimeError("FT RSBF: Unsupported hop count!");
         }
+    } else if (use_hpn) {
+        throw cRuntimeError("RSBF not implemented for HPN!");
     } else {
         switch (hop_count) {
             case 1:
@@ -2136,54 +1974,15 @@ void BouncingIeee8021dRelay::fw_rsbf_based(Packet *packet,
 }
 
 unsigned int BouncingIeee8021dRelay::chunk_data_get_random_dst_gpu(unsigned int out_port_idx) {
+    // TODO: For hpn, we can not change the receiving GPU at last hop due to rail optimized design.
+    // Therefore, need to find a way to do it earlier (perhaps second last hop)
+    if (use_hpn) return out_port_idx;
     int relative_server_idx = int(out_port_idx * 1.0 / num_gpus);
     unsigned int random_idx = getRandomIdx();
     random_idx %= num_gpus;
     unsigned int new_idx = (relative_server_idx * num_gpus) + random_idx;
     EV << "Output port idx changed from " << out_port_idx << " to " << new_idx << endl;
     return new_idx;
-}
-
-void BouncingIeee8021dRelay::elmo_pop_pkt_header_overhead(Packet *packet) {
-
-    EV << "BouncingIeee8021dRelay::elmo_pop_pkt_header_overhead" << endl;
-
-    std::string pkt_name = packet->getName();
-
-    // does not apply to non-data packets!
-    if (pkt_name.compare("data") != 0)
-        return;
-
-    b packetPosition = packet->getFrontOffset();
-    packet->setFrontIteratorPosition(b(0));
-    auto phyHeader = packet->removeAtFront<EthernetPhyHeader>();
-    auto ethHeader = packet->removeAtFront<EthernetMacHeader>();
-    auto ipHeader = packet->removeAtFront<Ipv4Header>();
-    auto udpHeader = packet->removeAtFront<UdpHeader>();
-    auto chunk = packet->removeAtFront<GenericAppMsg>();
-
-    if (chunk->getElmo_overhead_pop_bytes() == 0)
-        throw cRuntimeError("chunk->getElmo_overhead_pop_bytes() == 0");
-
-    B bytes_to_be_removed = B(chunk->getElmo_overhead_pop_bytes());
-
-    EV << "Elmo Bytes to be removed: " << bytes_to_be_removed << endl;
-
-    // don't let packet length fall below 200 B
-    if (chunk->getChunkLength() > bytes_to_be_removed + B(200)) {
-        chunk->setChunkLength(chunk->getChunkLength() - bytes_to_be_removed);
-        udpHeader->setTotalLengthField(udpHeader->getTotalLengthField() - bytes_to_be_removed);
-        ipHeader->setTotalLengthField(ipHeader->getTotalLengthField() - bytes_to_be_removed);
-        ethHeader->setPayload_length(ethHeader->getPayload_length() - bytes_to_be_removed);
-        ethHeader->setTotal_length(ethHeader->getTotal_length() - bytes_to_be_removed);
-    }
-
-    packet->insertAtFront(chunk);
-    packet->insertAtFront(udpHeader);
-    packet->insertAtFront(ipHeader);
-    packet->insertAtFront(ethHeader);
-    packet->insertAtFront(phyHeader);
-    packet->setFrontIteratorPosition(packetPosition);
 }
 
 void BouncingIeee8021dRelay::forward_packet_based_on_host_instructions(Packet *packet) {
@@ -2194,11 +1993,6 @@ void BouncingIeee8021dRelay::forward_packet_based_on_host_instructions(Packet *p
         throw cRuntimeError("forward_packet_based_on_host_instructions only works with RECOVERY_NOTIF");
 
     auto ethHeader = packet->peekAtFront<EthernetMacHeader>();
-
-    if (ethHeader->getUsing_elmo()) {
-        elmo_pop_pkt_header_overhead(packet);
-    }
-
     std::string pkt_name = packet->getName();
     bool rsbf_is_pkt_redundant = (use_rsbf && ethHeader->getRsbf_redundant_send());
 
@@ -2293,6 +2087,7 @@ void BouncingIeee8021dRelay::forward_packet_based_on_host_instructions(Packet *p
         std::random_device rd;                          // Non-deterministic seed
         std::mt19937 gen(rd());                         // Mersenne Twister engine
         std::uniform_int_distribution<> dist(0, output_port_array.getInnerArrayArraySize()-1);    // Range: [0, 10]
+//        std::cout<<"options: "<<output_port_array.getInnerArrayArraySize()<<endl;
         int random_number = dist(gen);
         packet->setFrontIteratorPosition(b(0));
         auto phyHeader = packet->removeAtFront<EthernetPhyHeader>();
@@ -2304,6 +2099,15 @@ void BouncingIeee8021dRelay::forward_packet_based_on_host_instructions(Packet *p
         InterfaceEntry *ie = ifTable->getInterface(output_port_array.getInnerArray(random_number));
         dispatch(packet->dup(), ie);
     } else {
+//        auto msg_dup = packet->dup();
+//        auto chunk = msg_dup->removeAtFront<SliceChunk>();
+//        Packet* temp = new Packet();
+//        auto main_chunk = chunk->getChunk();
+//        temp->insertAtBack(main_chunk);
+//        auto payload = temp->popAtFront<GenericAppMsg>();
+//        unsigned long seq_num = payload->getSeq_num();
+        auto m_eth_header = packet->peekAtFront<EthernetMacHeader>();
+        EV << "Src GPU: "<<m_eth_header->getSrc_gpu_idx()<<endl;
         // Multicast
         EV << "Sending to all " << output_port_array.getInnerArrayArraySize() << " output ports" << endl;
 
@@ -2382,6 +2186,18 @@ void BouncingIeee8021dRelay::forward_packet_based_on_host_instructions(Packet *p
                 if (is_last_hop && ethHeader->getIn_src_sharding()) {
                     out_port_idx = chunk_data_get_random_dst_gpu(out_port_idx);
                 }
+
+                /* Sana orca: here I should check if its aggregate and port is downstream - I randomly pick a tor from destination segment
+                1. check if agg and downstream
+                2. get range of ports for destination segment
+                3. it can be done using num_tors_per_segment / 2 -- take mod of port with this number, multiply the res with this number that is lower range and plus this number for max range
+                */
+
+//                int orca_agg_port = orca_get_agg_spray(packet, out_port_idx);
+//                if (orca_agg_port != -1) {
+//                    EV <<"Picking random agent at aggregate, picking port: "<<orca_agg_port<<endl;
+//                    out_port_idx = orca_agg_port;
+//                }
 
                 InterfaceEntry *ie = ifTable->getInterface(out_port_idx);
 
@@ -2652,6 +2468,8 @@ int BouncingIeee8021dRelay::get_pod_idx_for_tor(int tor_idx) {
         if (fattree_k < 0)
             throw cRuntimeError("Invalid fattree K");
         return int(tor_idx / (fattree_k/2.0));
+    } else if (use_hpn) {
+        return int(tor_idx / num_segments_per_pod); // in case of hpn, we are passed the segment idx
     } else {
         // for leaf spine all ToRs are in one pod
         return 0;
@@ -2660,7 +2478,7 @@ int BouncingIeee8021dRelay::get_pod_idx_for_tor(int tor_idx) {
 
 bool BouncingIeee8021dRelay::isAggSwitchInDstPod(Packet *packet) {
     std::string switch_path = switch_module->getFullPath();
-    if (use_fattree) {
+    if (use_fattree || use_hpn) {
         // this is not aggregate
         if (switch_path.find("agg[") == std::string::npos)
             return false;
@@ -2672,17 +2490,21 @@ bool BouncingIeee8021dRelay::isAggSwitchInDstPod(Packet *packet) {
             return true; // every ToR is in the same pod so if we are in spine, we are in dst pod
     }
     auto frame = packet->peekAtFront<EthernetMacHeader>();
-    int dst_tor_idx = frame->getDst_tor_idx();
+    int dst_tor_idx = frame->getDst_tor_idx(); // in cast of hpn, it is the destination segment
     int dst_pod_idx = get_pod_idx_for_tor(dst_tor_idx);
     int switch_index = getParentModule()->getIndex();
-    int switch_pod_idx = get_pod_idx_for_tor(switch_index);
-    EV << "Switch pod: " << switch_pod_idx << ", dst pod: " << dst_pod_idx << endl;
+    int switch_pod_idx = -1;
+    if (use_hpn) {
+        // WRONG because switch is agg and i am treating it as tor -- switch_pod_idx = get_pod_idx_for_tor(int(switch_index/num_tors_per_segment)); // in case of hpn, the segment matters not the tor
+        switch_pod_idx = int(switch_index / (num_aggs_per_plane * 2)); // there are 2 planes in each pod
+    } else
+        switch_pod_idx = get_pod_idx_for_tor(switch_index);
     return (switch_pod_idx == dst_pod_idx);
 }
 
 bool BouncingIeee8021dRelay::isSwitchToR() {
     std::string switch_path = switch_module->getFullPath();
-    if (use_fattree) {
+    if (use_fattree || use_hpn) {
         // is this core?
         if (switch_path.find("edge[") != std::string::npos)
             return true;
@@ -2697,7 +2519,7 @@ bool BouncingIeee8021dRelay::isSwitchToR() {
 bool BouncingIeee8021dRelay::isSwitchDstToR(Packet *packet) {
 
     std::string switch_path = switch_module->getFullPath();
-    if (use_fattree) {
+    if (use_fattree || use_hpn) {
         // this is not edge (ToR)
         if (switch_path.find("edge[") == std::string::npos)
             return false;
@@ -2708,18 +2530,21 @@ bool BouncingIeee8021dRelay::isSwitchDstToR(Packet *packet) {
     }
 
     auto frame = packet->peekAtFront<EthernetMacHeader>();
-    int dst_tor_idx = frame->getDst_tor_idx();
+    int dst_tor_idx = frame->getDst_tor_idx(); // in case of hpn, it is dst segment
     int switch_index = getParentModule()->getIndex();
+    if (use_hpn) {
+        // need to get segment of the switch because the frame as destination segment stored
+        switch_index = int(switch_index / num_tors_per_segment);
+    }
 
     EV << "Dst tor idx is " << dst_tor_idx << " and switch index is " << switch_index << endl;
-
     return (dst_tor_idx == switch_index);
 }
 
 bool BouncingIeee8021dRelay::isSwitchCore() {
 
     std::string switch_path = switch_module->getFullPath();
-    if (use_fattree) {
+    if (use_fattree || use_hpn) {
         // is this core?
         if (switch_path.find("core[") != std::string::npos)
             return true;
@@ -2732,7 +2557,7 @@ bool BouncingIeee8021dRelay::isSwitchCore() {
 bool BouncingIeee8021dRelay::isSwitchAggregate() {
 
     std::string switch_path = switch_module->getFullPath();
-    if (use_fattree) {
+    if (use_fattree || use_hpn) {
         // is this core?
         if (switch_path.find("agg[") != std::string::npos)
             return true;
@@ -2902,7 +2727,7 @@ void BouncingIeee8021dRelay::mcast_programmable_core(Packet *packet) {
 }
 
 bool BouncingIeee8021dRelay::is_port_covered_by_cidr(
-        unsigned int port_idx, std::string cidr_group_id) {
+        unsigned int port_idx, std::string cidr_group_id, bool is_agg) {
 
     // cidr_group_id is in form of X_Y, here we only care about Y
     size_t pos = cidr_group_id.find('_');
@@ -2920,6 +2745,17 @@ bool BouncingIeee8021dRelay::is_port_covered_by_cidr(
     if (len > bitset_size)
         throw cRuntimeError("bitset_size should always be > len");
 
+
+    if (use_hpn) {
+        if (is_agg) {
+            // on the downstream, each agg is connected to one tor from all tor pairs in a segment
+            port_idx = port_idx / int(num_tors_per_segment / 2);
+        } else {
+            // each core is connected to 15 aggregates in one pod
+            port_idx = port_idx / 15;
+        }
+    }
+
     std::string port_bin = std::bitset<bitset_size>(port_idx).to_string();
 
     EV << port_idx << " converted to " << port_bin << endl;
@@ -2927,7 +2763,7 @@ bool BouncingIeee8021dRelay::is_port_covered_by_cidr(
     // Compare only the relevant bits
     for (size_t i = 0; i < len; ++i) {
         if (cidr_group_id[i] != '*' && cidr_group_id[i] != port_bin[bitset_size - len + i]) {
-            EV << port_idx << " is NOT part of " << cidr_group_id << endl;
+            std::cout << port_idx << " is NOT part of " << cidr_group_id << endl;
             return false;
         }
     }
@@ -3003,14 +2839,23 @@ void BouncingIeee8021dRelay::mcast_cidr_core(Packet *packet) {
         packet_to_send->setFrontIteratorPosition(packetPosition);
         auto frame = packet_to_send->peekAtFront<EthernetMacHeader>();
         std::list<int> destInterfaceIds = macTable->getInterfaceIdForAddress(frame->getDest());
-        if (destInterfaceIds.size() > 1)
+        if (!use_hpn && destInterfaceIds.size() > 1)
             throw cRuntimeError("We must at most have one path from the core toward each destination!");
         EV << "Sending a copy of the message toward an aggregate switch: " << packet_to_send->str() << endl;
         packet_to_send->addTag<InputPortTag>()->setInput_port_idx(input_port_idx);
         InterfaceEntry *ie = nullptr;
 
-        if (destInterfaceIds.size() > 0)
-            ie = ifTable->getInterfaceById(*destInterfaceIds.begin());
+        if (destInterfaceIds.size() > 0) {
+            if (use_hpn) {
+                // hpn cores have multiple ports to the aggregates in destination pod, so pick one!
+                size_t ports_to_agg = destInterfaceIds.size();
+                size_t random_port = std::rand() % ports_to_agg;
+                auto downstreamit = destInterfaceIds.begin();
+                std::advance(downstreamit, random_port);
+                ie = ifTable->getInterfaceById(*downstreamit);
+            }
+            else ie = ifTable->getInterfaceById(*destInterfaceIds.begin());
+        }
 
         bool dropped_due_to_failure = false;
         if (drop_type == DROP_FAIL &&
@@ -3026,7 +2871,7 @@ void BouncingIeee8021dRelay::mcast_cidr_core(Packet *packet) {
         EV << "CIDR to port " << ie->getIndex() << endl;
         correct_cidr_ports.insert(ie->getIndex());
 //        packet_to_send->addTag<InterfaceReq>()->setInterfaceId(ie->getInterfaceId());
-        if (!is_port_covered_by_cidr(ie->getIndex(), cidr_group_id)) {
+        if (!is_port_covered_by_cidr(ie->getIndex(), cidr_group_id, false)) {
             std::cout << "Port " << ie->getIndex() << endl;
             std::cout << "CIDR group id: " << cidr_group_id << endl;
             throw cRuntimeError("How is not port covered by cidr_group_id");
@@ -3054,6 +2899,19 @@ void BouncingIeee8021dRelay::mcast_cidr_core(Packet *packet) {
                 potential_cidr_downsteams.insert(downstream_port_idx);
         } else
             throw cRuntimeError("Not in a core switch...!");
+    } else if (use_hpn) {
+        if (switch_path.find("core[") != std::string::npos) {
+            // get all potential ports towards the desired pod
+            auto frame = packet->peekAtFront<EthernetMacHeader>();
+            int dst_segment_idx = frame->getDst_tor_idx();
+            int dst_pod = get_pod_idx_for_tor(dst_segment_idx);
+            int pod_base_port = dst_pod * 15;
+            for (int downstream_port_idx = pod_base_port;
+                    downstream_port_idx < 15;
+                    downstream_port_idx++)
+                potential_cidr_downsteams.insert(downstream_port_idx);
+        } else
+                    throw cRuntimeError("Not in a core switch...!");
     } else
         throw cRuntimeError("Leaf-spine does not have core switches!");
 
@@ -3067,7 +2925,7 @@ void BouncingIeee8021dRelay::mcast_cidr_core(Packet *packet) {
                         failed_ports.end()) {
             EV << "Packet has not yet been forwarded to port " <<
                     potential_downstream << endl;
-            if (is_port_covered_by_cidr(potential_downstream, cidr_group_id)) {
+            if (is_port_covered_by_cidr(potential_downstream, cidr_group_id, false)) {
                 EV << "CIDR redundantly sending to port " << potential_downstream << endl;
                 auto ie = ifTable->getInterface(potential_downstream);
                 dispatch(packet->dup(), ie);
@@ -3147,8 +3005,13 @@ void BouncingIeee8021dRelay::mcast_cidr_agg(Packet *packet) {
         packet_to_send->setFrontIteratorPosition(packetPosition);
         auto frame = packet_to_send->peekAtFront<EthernetMacHeader>();
         std::list<int> destInterfaceIds = macTable->getInterfaceIdForAddress(frame->getDest());
-        if (destInterfaceIds.size() > 1)
-            throw cRuntimeError("We must at most have one path from the core toward each destination!");
+        if (destInterfaceIds.size() > 1){
+            std::cout<<"dst: "<<frame->getDest()<<std::endl;
+            std::cout<<"total out ifaces: "<<destInterfaceIds.size()<<endl;
+            std::cout<<"input port: "<<input_port_idx<<endl;
+            std::cout<<"dst tor idx: "<<frame->getDst_tor_idx()<<endl;
+            throw cRuntimeError("We must at most have one path from the agg toward each destination!");
+        }
         EV << "Sending a copy of the message toward a ToR: " << packet_to_send->str() << endl;
         packet_to_send->addTag<InputPortTag>()->setInput_port_idx(input_port_idx);
         InterfaceEntry *ie = nullptr;
@@ -3169,7 +3032,7 @@ void BouncingIeee8021dRelay::mcast_cidr_agg(Packet *packet) {
         EV << "CIDR to port " << ie->getIndex() << endl;
         correct_cidr_ports.insert(ie->getIndex());
 //        packet_to_send->addTag<InterfaceReq>()->setInterfaceId(ie->getInterfaceId());
-        if (!is_port_covered_by_cidr(ie->getIndex(), cidr_group_id)) {
+        if (!is_port_covered_by_cidr(ie->getIndex(), cidr_group_id, true)) {
             std::cout << "Port " << ie->getIndex() << endl;
             std::cout << "CIDR group id: " << cidr_group_id << endl;
             throw cRuntimeError("How is not port covered by cidr_group_id");
@@ -3214,7 +3077,7 @@ void BouncingIeee8021dRelay::mcast_cidr_agg(Packet *packet) {
                         failed_ports.end()) {
             EV << "Packet has not yet been forwarded to port " <<
                     potential_downstream << endl;
-            if (is_port_covered_by_cidr(potential_downstream, cidr_group_id)) {
+            if (is_port_covered_by_cidr(potential_downstream, cidr_group_id, true)) {
                 EV << "CIDR redundantly sending to port " << potential_downstream << endl;
                 auto ie = ifTable->getInterface(potential_downstream);
                 dispatch(packet->dup(), ie);
@@ -3272,9 +3135,6 @@ void BouncingIeee8021dRelay::chooseDispatchType(Packet *packet, InterfaceEntry *
     EV << "SEPEHR: The number of available ports for this packet is " << portNum << endl;
     EV << "SEPEHR: source mac address: " << frame->getSrc().str() << " and dest mac address: " << frame->getDest().str() << endl;
     EV << "Hop count: " << frame->getHop_count() << endl;
-
-    bool using_ina = (packet_name.compare("data") == 0 && frame->getCollective_alg() == BCAST_INA);
-
     if (!is_packet_arp_or_broadcast) {
         EV << "packet is not ARP or broadcast" << endl;
         InterfaceEntry *ie2;
@@ -3293,10 +3153,11 @@ void BouncingIeee8021dRelay::chooseDispatchType(Packet *packet, InterfaceEntry *
                 isPacketAppropriateForMulticast(packet_name)) {
             forward_packet_based_on_host_instructions(packet);
             return;
-        } else if (using_ina) {
+        } else if (use_ina &&
+                packet_name.compare("data") == 0) {
             if (random_fail_prob > 0)
                 throw cRuntimeError("failure/drop is not implemented for INA!!");
-            forward_packet_based_on_ina(packet);
+            forward_packet_based_on_ina(packet, portNum);
             return;
 
         } else if (isSwitchDstToR(packet) &&

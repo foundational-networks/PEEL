@@ -76,24 +76,24 @@ simple UDPLongBroadcastPasserApp like IApp
         @lifecycleSupport;
         double stopOperationExtraTime @unit(s) = default(-1s);    // extra time after lifecycle stop operation finished
         double stopOperationTimeout @unit(s) = default(2s);    // timeout value for lifecycle stop operation
-		
-		bool is_message_splitted = default(false);
-//        string collective_alg_type_str = default("");
+
+        bool is_message_splitted = default(false);
+        //        string collective_alg_type_str = default("");
         int splitted_chunk_size_bytes = default(-1);
         int splitted_subflow_num = default(-1);
-        
+
         int mss = default(-1); // in bytes
         int packet_creation_batch_size = default(-1);
-        
+
         int nvlink_speed_gbps = default(7200); // 900 GBps
         bool mcast_in_host = default(false);
         int num_gpus = default(1);
-                
+
         double processing_delay_mean = default(0);
         double processing_delay_stddev = default(0);
-        
+
         int mtu = default(1452);
-        
+
         // optireduce
         int optireduce_incast_factor = default(-1);
         bool use_becca_optireduce = default(false);
@@ -101,34 +101,22 @@ simple UDPLongBroadcastPasserApp like IApp
         
         // orca
         bool use_orca = default(false);
-        
+
         // rsbf
         bool use_rsbf = default(false);
-        
+
         bool use_fattree = default(false);
         
-        // autoccl
-        bool use_autoccl = default(false);
-    	bool autoccl_allreduce_only = default(false);
-        int num_flows_per_ml_query = default(-1);
-        
-        // fattree_k
-        int k = default(-1);
-        // num leafs in leaf spine
-        int num_spines = default(-1);
-        int num_aggs = default(-1);
-        int num_servers = default(-1);	// num servers under each leaf!
-        
-                        
+        bool use_hpn = default(false);
+
         @signal[flowEnded]();
         @signal[flowEndedQueryID]();
         @signal[flowPassed]();
-        
+
         @statistic[flowEndedRequesterID](title="flow ended requester id"; source="flowEnded"; record=vector; interpolationmode=none);
         @statistic[flowEndQueryID](title="flow ended query id"; source="flowEndedQueryID"; record=vector; interpolationmode=none);
         @statistic[flowPassedRequesterID](title="flow passed flow/requester id"; source="flowPassed"; record=vector; interpolationmode=none);
-        
-        
+
     gates:
         input socketIn @labels(TcpCommand/up);
         output socketOut @labels(TcpCommand/down);

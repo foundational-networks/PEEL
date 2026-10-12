@@ -4,16 +4,10 @@ from os.path import isfile, join
 from subprocess import call
 import sys
 
-# topology types
-Fattree = 0
-Leafspine = 1
-
 RESULT_FILES_DIR = './results/'
-UNDER_SAME_RACK = 1
-LEAF_SPINE = 2
-TOPOLOGY = LEAF_SPINE
 REP_NUM = 1
 
+# Keep sample outputs inside the PEEL simulations tree.
 OUTPUT_FILE_DIRECTORY = '../extracted_results/'
 
 if(len(sys.argv) > 1):
@@ -27,26 +21,18 @@ category = add_category
 
 onlyfiles = [f for f in listdir(RESULT_FILES_DIR) if
              isfile(join(RESULT_FILES_DIR, f)) and f[-4:] == '.vec' and '_0_rep' in f]
+
 f = open(RESULT_FILES_DIR + 'extractor.sh', 'w')
+
 for file_name in onlyfiles:
-    topology_type = None
-    if ('_ft_' in file_name):
-      topology_info = file_name.split('_ft_')[0]
-      topology_info_list = file_name.split('_')
-      ft_k = topology_info_list[0]
-      topology_type = Fattree
-    elif ('_ls_' in file_name):
-      topology_info = file_name.split('_ls_')[0]
-      topology_info_list = file_name.split('_')
-      num_spines = topology_info_list[0]
-      num_aggs = topology_info_list[1]
-      num_servers_under_each_rack = topology_info_list[2]
-      topology_type = Leafspine
-    else:
-      raise Exception("Unknown topology info")
-    
-    if topology_type is None:
-       raise Exception("topology_type is None")
+    if '_hpn_' not in file_name:
+        raise Exception("Expected HPN result filename containing '_hpn_': {}".format(file_name))
+
+    topology_info_list = file_name.split('_')
+    num_pods = topology_info_list[0]
+    num_aggs_per_plane = topology_info_list[1]
+    num_segments_per_pod = topology_info_list[2]
+    num_servers_per_segment = topology_info_list[3]
 
     num_ml_apps = (file_name.split('_mlapp_')[0]).split('_')[-1]
     num_bursty_apps = (file_name.split('_bursty_')[0]).split('_')[-1]
@@ -60,52 +46,31 @@ for file_name in onlyfiles:
     ml_flow_size = (file_name.split('_mlfsize')[0]).split('_')[-1]
     gpu_num = (file_name.split('_gpus')[0]).split('_')[-1]
     nvlink_speed = (file_name.split('_nv')[0]).split('_')[-1]
+
     chunk_size = None
     if ('chunk' in file_name):
       chunk_size = (file_name.split('_chunk')[0]).split('_')[-1]
+
     subf_num = None
     if ('subf' in file_name):
       subf_num = (file_name.split('_subf')[0]).split('_')[-1]
-    frag_perc = None
-    if ('_frag' in file_name):
-      frag_perc = (file_name.split('_frag')[0]).split('_')[-1]
-    # marking_timer = (file_name.split('_mark_')[0]).split('_')[-1]
-    # ordering_timer = (file_name.split('_ord')[0]).split('_')[-1]
-
 
     for rep_num in range(REP_NUM):
-        if topology_type == Leafspine:
-          without_format_input_file_name = '{}_{}_{}_ls_{}_mlapp_{}_bursty_{}_bg_' \
-                                    '{}_reqpburst_{}_bgintermult_{}_burstyintermult_{}_mlqueryintermult_' \
-                                      '{}_rep_{}_incastfsize_{}_mlscale_{}_mlfsize_{}_gpus_{}_nv' \
-              .format(num_spines, num_aggs, num_servers_under_each_rack,
+        without_format_input_file_name = '{}_{}_{}_{}_hpn_{}_mlapp_{}_bursty_{}_bg_' \
+                                  '{}_reqpburst_{}_bgintermult_{}_burstyintermult_{}_mlqueryintermult_' \
+                                    '{}_rep_{}_incastfsize_{}_mlscale_{}_mlfsize_{}_gpus_{}_nv' \
+            .format(num_pods, num_aggs_per_plane, num_segments_per_pod, num_servers_per_segment,
               num_ml_apps, num_bursty_apps, num_bg_apps, num_req_per_burst,
               bg_inter_arrival_multiplier, bursty_inter_arrival_multiplier, ml_query_inter_arrival_multiplier,
               rep_num, incast_flow_size, ml_scale, ml_flow_size, gpu_num, nvlink_speed)
 
-          without_format_output_file_name = '{}_{}_{}_ls_{}_mlapp_{}_bursty_{}_bg_' \
-                                    '{}_reqpburst_{}_bgintermult_{}_burstyintermult_{}_mlqueryintermult_' \
-                                      '{}_incastfsize_{}_mlscale_{}_mlfsize_{}_gpus_{}_nv' \
-              .format(num_spines, num_aggs, num_servers_under_each_rack,
+        without_format_output_file_name = '{}_{}_{}_{}_hpn_{}_mlapp_{}_bursty_{}_bg_' \
+                                  '{}_reqpburst_{}_bgintermult_{}_burstyintermult_{}_mlqueryintermult_' \
+                                    '{}_incastfsize_{}_mlscale_{}_mlfsize_{}_gpus_{}_nv' \
+            .format(num_pods, num_aggs_per_plane, num_segments_per_pod, num_servers_per_segment,
               num_ml_apps, num_bursty_apps, num_bg_apps, num_req_per_burst,
               bg_inter_arrival_multiplier, bursty_inter_arrival_multiplier, ml_query_inter_arrival_multiplier,
               incast_flow_size, ml_scale, ml_flow_size, gpu_num, nvlink_speed)
-        elif topology_type == Fattree:
-          without_format_input_file_name = '{}_ft_{}_mlapp_{}_bursty_{}_bg_' \
-                                    '{}_reqpburst_{}_bgintermult_{}_burstyintermult_{}_mlqueryintermult_' \
-                                      '{}_rep_{}_incastfsize_{}_mlscale_{}_mlfsize_{}_gpus_{}_nv' \
-              .format(ft_k,
-                num_ml_apps, num_bursty_apps, num_bg_apps, num_req_per_burst,
-                bg_inter_arrival_multiplier, bursty_inter_arrival_multiplier, ml_query_inter_arrival_multiplier,
-                rep_num, incast_flow_size, ml_scale, ml_flow_size, gpu_num, nvlink_speed)
-
-          without_format_output_file_name = '{}_ft_{}_mlapp_{}_bursty_{}_bg_' \
-                                    '{}_reqpburst_{}_bgintermult_{}_burstyintermult_{}_mlqueryintermult_' \
-                                      '{}_incastfsize_{}_mlscale_{}_mlfsize_{}_gpus_{}_nv' \
-              .format(ft_k,
-                num_ml_apps, num_bursty_apps, num_bg_apps, num_req_per_burst,
-                bg_inter_arrival_multiplier, bursty_inter_arrival_multiplier, ml_query_inter_arrival_multiplier,
-                incast_flow_size, ml_scale, ml_flow_size, gpu_num, nvlink_speed)
 
         if (chunk_size is not None):
           without_format_input_file_name += '_{}_chunk'.format(chunk_size)
@@ -114,10 +79,6 @@ for file_name in onlyfiles:
         if (subf_num is not None):
           without_format_input_file_name += '_{}_subf'.format(subf_num)
           without_format_output_file_name += '_{}_subf'.format(subf_num)
-
-        if (frag_perc is not None):
-          without_format_input_file_name += '_{}_frag'.format(frag_perc)
-          without_format_output_file_name += '_{}_frag'.format(frag_perc)
 
         vector_file_name = without_format_input_file_name + ".vec"
         scalar_file_name = without_format_input_file_name + ".sca"
@@ -179,22 +140,6 @@ for file_name in onlyfiles:
         output_dir_name = 'FLOW_STARTED_COLLECTIVE_ALG/'
         command = "scavetool x --type v --filter \"module(**.server[*].app[*]) AND " \
                   "\\\"flowStartCollectiveAlg:vector\\\"\" -o {} -F CSV-S {}\n".format(
-            OUTPUT_FILE_DIRECTORY + output_dir_name + output_file_name, vector_file_name)
-        print(command)
-        f.write('echo \"{}\"\n'.format(output_dir_name))
-        f.write(command)
-
-        output_dir_name = 'AUTOCCL_CHOSEN_ALG/'
-        command = "scavetool x --type v --filter \"module(**.server[*].app[*]) AND " \
-                  "\\\"autocclChosenCollectiveAlg:vector\\\"\" -o {} -F CSV-S {}\n".format(
-            OUTPUT_FILE_DIRECTORY + output_dir_name + output_file_name, vector_file_name)
-        print(command)
-        f.write('echo \"{}\"\n'.format(output_dir_name))
-        f.write(command)
-
-        output_dir_name = 'AUTOCCL_CHOSEN_COLLECTIVE/'
-        command = "scavetool x --type v --filter \"module(**.server[*].app[*]) AND " \
-                  "\\\"autocclChosenCollective:vector\\\"\" -o {} -F CSV-S {}\n".format(
             OUTPUT_FILE_DIRECTORY + output_dir_name + output_file_name, vector_file_name)
         print(command)
         f.write('echo \"{}\"\n'.format(output_dir_name))

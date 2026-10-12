@@ -159,8 +159,6 @@ module AugmentedEtherMacFullDuplex like IEtherMac
         // for rate calculation
         int num_gpus = default(-1);
         int num_flows_per_ml_query = default(-1);
-        int num_servers = default(-1);	// num servers under each leaf!
-        bool use_fattree = default(false);
         
         // INA
         string aggregator_num = default("0");	// we set to string so that we could pass any value we want
@@ -191,8 +189,6 @@ module AugmentedEtherMacFullDuplex like IEtherMac
         double additive_increase_constant = default(0);     // fabric additive increament
         double multiplicative_decrease_constant = default(0);       // fabric multiplicative decrease constant
         double max_mdf = default(0);        // fabric maximum multiplicative decrease factor
-        
-        bool limit_all_to_all_rate = default(false);
 
         @signal[txPk](type=inet::Packet);
         @signal[rxPkOk](type=inet::Packet);

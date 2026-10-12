@@ -73,6 +73,12 @@ class INET_API BouncingIeee8021dRelay : public LayeredProtocolBase
 
     bool use_fattree = false;
 
+    bool use_hpn = false;
+    int num_tors_per_segment = -1;
+    int num_segments_per_pod = -1;
+    int num_servers_per_segment = -1;
+    int num_aggs_per_plane = -1;
+
     void read_inc_deflection_properties(std::string incremental_deployment_identifier,
             std::string input_file_name);
 
@@ -82,20 +88,7 @@ class INET_API BouncingIeee8021dRelay : public LayeredProtocolBase
     std::unordered_map<unsigned int, simtime_t> port_to_recovery_time;
     Packet* failure_or_recovery_notif_pkt = nullptr;
 
-    // ina
-    virtual bool ina_has_free_aggregation_pool_spots(unsigned long query_id,
-            unsigned long seq_num,
-            int leaf_aggregation_num,
-            int spine_aggregation_num,
-            int core_aggregation_num);
-    virtual void ina_allocate_free_aggregation_pool_spots(unsigned long query_id,
-            unsigned long seq_num,
-            int leaf_aggregation_num,
-            int spine_aggregation_num,
-            int core_aggregation_num);
-
   protected:
-    enum CollectiveAlgTypes { BCAST_SINGLE_SENDER = 1, BCAST_BINOMIAL_TREE, BCAST_BINARY_TREE, BCAST_RING, BCAST_NETWORK_ASSISTED, BCAST_INA, BCAST_OPTIREDUCE, BCAST_PARTIAL_MULTICAST};
     enum TreeTraversalType { TREE_UP = 1, TREE_DOWN };
     enum MsgKinds { PASS = 1, RECOVER_LINK };
     MacAddress bridgeAddress;
@@ -133,7 +126,7 @@ class INET_API BouncingIeee8021dRelay : public LayeredProtocolBase
      */
     std::list<int> deflection_memory;
 
-    bool use_ecmp, use_power_of_n_lb, use_per_pkt_lb;
+    bool use_ecmp, use_power_of_n_lb, use_per_pkt_lb, use_ina;
     std::hash<std::string> header_hash;
     //Naive Deflection
     bool bounce_naively;
@@ -175,9 +168,13 @@ class INET_API BouncingIeee8021dRelay : public LayeredProtocolBase
 
     // ina
     // maps (query id, seq num) to incoming ports/candidate pkt
-    std::map<std::pair<unsigned long, unsigned long>, std::map<InterfaceEntry*, Packet*>> query_seqnum_to_port_pkt_map;
+    std::map<std::pair<unsigned long, unsigned long>, std::set<InterfaceEntry*>> query_seqnum_to_portlist_map;
+    // (query, seq num) --> (candidate packet)
+    std::map<std::pair<unsigned long, unsigned long>, Packet*> query_seqnum_to_pkt_map;
+    // (query, seq num) --> count
+    std::map<std::pair<unsigned long, unsigned long>, unsigned int> query_seqnum_count;
     double processing_delay_mean, processing_delay_stddev;
-    double reduction_delay = -1;
+    double reduction_delay;
     int num_gpus = -1;
     int num_servers_under_each_leaf = -1;
     int num_spines = -1;
@@ -185,23 +182,10 @@ class INET_API BouncingIeee8021dRelay : public LayeredProtocolBase
     int fattree_k = -1;
     virtual void handleSelfMessage(cMessage *message) override;
 
-    int mtu_bytes = 1500;
-    unsigned int ina_aggregation_pool_spots_remaining = 0;
-    unsigned int ina_aggregation_pool_spots_max = 0;
-    std::set<std::string> ina_aggregation_pool_allocations; // "queryid_seqnum" being in this indicates that we have allocated a slot for this
-    virtual BouncingIeee8021dRelay* get_upstream_switch_realy(unsigned long query_id,
-            unsigned long seq_num,
-            int leaf_aggregation_num,
-            int spine_aggregation_num,
-            int core_aggregation_num);
-
 //    bool use_host_assisted_routing = false;
 
     // rsbf
     bool use_rsbf = false;
-
-    // elmo
-    void elmo_pop_pkt_header_overhead(Packet *packet);
 
     // cepheus
     bool use_cepheus = false;
@@ -364,14 +348,12 @@ class INET_API BouncingIeee8021dRelay : public LayeredProtocolBase
             int port_info_idx,
             long candidate_start_from_idx);
     bool orca_should_send_to_agent(Packet *packet);
-    double get_processing_delay();
-    bool ina_all_shards_received(int leaf_aggregation_num,
-            int spine_aggregation_num,
-            int core_aggregation_num,
-            int shard_num);
-    void forward_packet_based_on_ina(Packet *packet,
-            unsigned long query_id = 0,
-            unsigned long seq_num = 0);
+    int orca_get_agg_spray(Packet *packet, int output_port_idx);
+    double get_processing_delay(int tree_direction);
+    void forward_packet_based_on_ina(Packet *packet, int portNum);
+    void ina_pass_message(int tree_direction,
+            unsigned long query_id,
+            unsigned long seq_num);
     bool packet_has_host_instructions(Packet *packet);
     unsigned int seed;
     unsigned int getRandomIdx();
@@ -381,7 +363,7 @@ class INET_API BouncingIeee8021dRelay : public LayeredProtocolBase
     bool isSwitchToR();
     void multicast_downstream(Packet *packet, int input_port_idx);
     void mcast_programmable_core(Packet *packet);
-    bool is_port_covered_by_cidr(unsigned int port_idx, std::string cidr_group_id);
+    bool is_port_covered_by_cidr(unsigned int port_idx, std::string cidr_group_id, bool is_agg);
     void mcast_cidr_agg(Packet *packet);
     void mcast_cidr_core(Packet *packet);
     bool isPacketAppropriateForMulticast(std::string pkt_name);

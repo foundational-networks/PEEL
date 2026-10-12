@@ -79,13 +79,6 @@ class AllgatherCustomCollectiveMsgInitiatorInfo
 
         bool using_orca = false;
 
-        bool using_elmo = false;
-
-        // ina
-        int leaf_aggregation_num = -1;
-        int spine_aggregation_num = -1;
-        int core_aggregation_num = -1;
-
         AllgatherCustomCollectiveMsgInitiatorInfo(unsigned long flow_id, unsigned long flow_size, unsigned long query_id, unsigned long num_dst_servers_per_query) {
             this->flow_size = flow_size;
             this->query_id = query_id;

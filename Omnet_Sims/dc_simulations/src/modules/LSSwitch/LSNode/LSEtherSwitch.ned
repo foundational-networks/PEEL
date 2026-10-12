@@ -108,6 +108,7 @@ module LSEtherSwitch
 		bool use_power_of_n_lb = default(false);
         int random_power_factor = default(2);
         bool use_per_pkt_lb = default(false);
+        bool use_ina = default(false);
         
         // selective reaction for the CC
         bool apply_selective_net_reaction = default(false);
@@ -150,6 +151,11 @@ module LSEtherSwitch
         bool use_rsbf = default(false);
         
         bool use_fattree = default(false);
+        
+        bool use_hpn = default(false);
+        int num_tors_per_segment = default(-1);
+        int num_segments_per_pod = default(-1);
+        int num_servers_per_segment = default(-1);
         
         // use tree initiation/termination packet
         bool initiate_tree = default(false);

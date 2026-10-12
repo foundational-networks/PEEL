@@ -22,7 +22,6 @@
 #include "inet/linklayer/ethernet/EtherMacBase.h"
 #include "../CollectiveApps/UDPLongBroadcastPasserApp.h"
 #include "../CollectiveApps/UDPLongAllgatherInitiatorApp.h"
-#include "../BouncingSwitchRelay/BouncingIeee8021dRelay.h"
 
 using namespace inet;
 
@@ -106,8 +105,6 @@ class INET_API AugmentedEtherMacFullDuplex : public EtherMacBase
     // for rate calculation
     int num_gpus = -1;
     int num_flows_per_ml_query = -1;
-    int num_servers_under_each_leaf = -1;
-    bool use_fattree = false;
 
     int server_module_index;
 
@@ -166,8 +163,6 @@ class INET_API AugmentedEtherMacFullDuplex : public EtherMacBase
     double swift_fs_max_cwnd;     // max cwnd for target scaling
     double swift_fs_min_cwnd;     // min cwnd for target scaling
     double swift_fs_range;        // max scaling range
-
-    bool limit_all_to_all_rate = false;
 
 };
 

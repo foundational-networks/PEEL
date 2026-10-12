@@ -55,6 +55,9 @@ simple V2PIFO extends PacketQueue
         
         bool just_prioritize_bursty_flows = default(false);
         
+        // ina
+        bool use_ina = default(false);
+        
         @signal[packetDropSeq]();
         @signal[packetDropRetCount]();
         @signal[packetDropTotalPayloadLength]();

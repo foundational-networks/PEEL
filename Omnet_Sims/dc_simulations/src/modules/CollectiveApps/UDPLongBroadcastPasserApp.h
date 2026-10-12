@@ -52,7 +52,7 @@ class INET_API UDPLongBroadcastPasserApp : public ApplicationBase, public UdpSoc
 
   protected:
 
-    enum CollectiveAlgTypes { BCAST_SINGLE_SENDER = 1, BCAST_BINOMIAL_TREE, BCAST_BINARY_TREE, BCAST_RING, BCAST_NETWORK_ASSISTED, BCAST_INA, BCAST_OPTIREDUCE, BCAST_PARTIAL_MULTICAST, BCAST_MULTIWRITE};
+    enum CollectiveAlgTypes { BCAST_SINGLE_SENDER = 1, BCAST_BINOMIAL_TREE, BCAST_BINARY_TREE, BCAST_RING, BCAST_NETWORK_ASSISTED, BCAST_INA, BCAST_OPTIREDUCE, BCAST_PARTIAL_MULTICAST};
     enum CollectiveTypes { ALL_TO_ALL_V = 1, ALL_REDUCE, REDUCE, ALL_GATHER, BROADCAST, REDUCE_SCATTER};
     enum MsgKinds { PASS = 1, FINISH};
     enum BatchingStatus { BATCH_SEND = 1, BATCH_SLEEP, BATCH_TERMINATE };
@@ -88,10 +88,6 @@ class INET_API UDPLongBroadcastPasserApp : public ApplicationBase, public UdpSoc
     int nvlink_speed_gbps = -1;
     bool mcast_in_host;
     int num_gpus;
-    int num_servers_under_each_leaf = -1;
-    int fattree_k = -1;
-    int num_spines = -1;
-    int num_leafs = -1;
     // we put things here till the time they are popped
     std::unordered_map<unsigned long, BCastCustomCollectiveMsgPasserInfo*> storage;
     unsigned long storage_id = 1;
@@ -130,18 +126,16 @@ class INET_API UDPLongBroadcastPasserApp : public ApplicationBase, public UdpSoc
 
     bool use_fattree = false;
 
-    // autoccl
-    bool use_autoccl = false;
-    bool autoccl_allreduce_only = false;
-    int num_flows_per_ml_query = 0; // for retrieving the proper flow size!
-    int retrieve_original_flow_size(int m_collective_type,
-            int m_collective_alg, double flow_size);
+    bool use_hpn = false;
+    // maps (rail_source_gpu, flow id) to actual source_gpu
+    std::map<std::tuple<int, unsigned long>, int> rail_to_actual_src_gpu;
+    // maps query id to designated dst gpu (for partial mcast case to aggregate shards on one dst gpu)
+    std::map<unsigned long, int> designated_dst_gpu_partial_mcast;
 
     // maps (src gpu_idx, dst gpu_idx, flow_id) to set of arrived seq nums
     std::map<std::tuple<int, int, unsigned long>, std::set<unsigned long>> arrived_seq_nums_set;
     // set of seq num history (src gpu_idx, dst gpu_idx, flow_id)
     std::set<std::tuple<int, int, unsigned long>> seq_num_complete_flow_history;
-
 
 
   protected:
@@ -171,8 +165,6 @@ class INET_API UDPLongBroadcastPasserApp : public ApplicationBase, public UdpSoc
     virtual void pass_bcast_binary_tree(BCastCustomCollectiveMsgPasserInfo* record_msg_info);
     int get_num_children(BCastCustomCollectiveMsgPasserInfo* record_msg_info);
     virtual void pass_bcast_ring(BCastCustomCollectiveMsgPasserInfo* record_msg_info);
-    virtual void pass_bcast_multiwrite(Packet* pkt, GenericAppMsg* payload);    // when node is relay
-    virtual void pass_bcast_multiwrite(BCastCustomCollectiveMsgPasserInfo* record_msg_info); // when node is a dst
     virtual void pass_bcast_optireduce(BCastCustomCollectiveMsgPasserInfo* record_msg_info);
     virtual void optireduce_send_next(unsigned long query_id, int src_gpu_idx);
 
