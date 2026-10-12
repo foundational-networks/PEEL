@@ -163,3 +163,15 @@ The commands above run each experiment and store the results in ```PEEL/Omnet_Si
 ### Computing per-packet overhead
 
 In ```PEEL/Omnet_Sims/dc_simulations/simulations/sims/scalability```, we have also included python scripts that compute the per-packet overhead of RSBF, BIER-TE, Elmo, and PEEL under various fat-tree network setups.
+
+---
+
+### Other Components and Baselines
+
+In addition to the components available on the `main` branch, our simulator repository includes the following implementations and baselines on separate branches:
+
+- **RDMC (`rdmc` branch):** RDMC constructs a multicast overlay using reliable RDMA unicast transfers and pipelines receiver-side relaying according to a binomial-hypercube schedule. We have implemented RDMC and evaluated it against PEEL.
+
+- **Rail-optimized datacenters (`hpn` branch):** Although our primary focus is on Clos networks, as discussed in the paper, PEEL's design can be extended to other hierarchical topologies, including rail-optimized datacenters. We have simulated these topologies and evaluated PEEL against other algorithms in this setting.
+
+- **PEEL with ring-based loss recovery (`loss_recovery` branch):** We have implemented a ring-based loss-recovery mechanism alongside PEEL to demonstrate its compatibility with existing approaches to multicast reliability.
