@@ -140,7 +140,7 @@ class INET_API UDPLongAllgatherInitiatorApp : public ApplicationBase, public Udp
     enum SelfMsgKinds { SEND = 1, STOP};
     enum TreeSearchType { TREE_LOW = 1, TREE_HIGH };
     enum TreeTraversalType { TREE_UP = 1, TREE_DOWN };
-    enum CollectiveAlgTypes { BCAST_SINGLE_SENDER = 1, BCAST_BINOMIAL_TREE, BCAST_BINARY_TREE, BCAST_RING, BCAST_NETWORK_ASSISTED, BCAST_INA, BCAST_OPTIREDUCE, BCAST_PARTIAL_MULTICAST, BCAST_MULTIWRITE};
+    enum CollectiveAlgTypes { BCAST_SINGLE_SENDER = 1, BCAST_BINOMIAL_TREE, BCAST_BINARY_TREE, BCAST_RING, BCAST_NETWORK_ASSISTED, BCAST_INA, BCAST_OPTIREDUCE, BCAST_PARTIAL_MULTICAST};
     enum CollectiveTypes { ALL_TO_ALL_V = 1, ALL_REDUCE, REDUCE, ALL_GATHER, BROADCAST, REDUCE_SCATTER};
     enum LBGranularity {LB_FLOW = 1, LB_PKT};
     // random or round-robin
@@ -260,6 +260,10 @@ class INET_API UDPLongAllgatherInitiatorApp : public ApplicationBase, public Udp
     bool partial_mcast_chunk_tors = false;
     bool partial_mcast_programmable_cores = false;
     bool partial_mcast_divide_tors_among_cores = false;
+
+    // DROP RECOVERY
+    int recovery_type = -1;
+    enum DropRecovery {DROP_NOTIF = 1, RING_BASED, HIERARCHICAL};
 
     // using CIDR in aggs
     enum CIDRType { CIDR_FULL_TREE = 1, CIDR_BW_GAIN};
@@ -386,7 +390,6 @@ class INET_API UDPLongAllgatherInitiatorApp : public ApplicationBase, public Udp
     virtual void snd_allgather_binary_tree(int collective_type, unsigned long query_id);
     virtual void snd_allgather_binomial_tree(int collective_type, unsigned long query_id);
     virtual void snd_allgather_ring(int collective_type, unsigned long query_id);
-    void snd_allgather_multiwrite(int collective_type, unsigned long query_id);
     virtual void optireduce_send_next(unsigned long query_id, int src_gpu_idx);
     virtual void snd_allgather_optireduce(int collective_type, unsigned long query_id);
     virtual void snd_allgather_network_assisted(int collective_type, unsigned long query_id);

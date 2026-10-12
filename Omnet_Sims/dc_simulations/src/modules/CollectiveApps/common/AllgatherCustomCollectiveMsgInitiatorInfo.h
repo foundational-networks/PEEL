@@ -86,6 +86,9 @@ class AllgatherCustomCollectiveMsgInitiatorInfo
         int spine_aggregation_num = -1;
         int core_aggregation_num = -1;
 
+        // for loss recovery
+        std::list<unsigned long> involved_servers_list;
+
         AllgatherCustomCollectiveMsgInitiatorInfo(unsigned long flow_id, unsigned long flow_size, unsigned long query_id, unsigned long num_dst_servers_per_query) {
             this->flow_size = flow_size;
             this->query_id = query_id;

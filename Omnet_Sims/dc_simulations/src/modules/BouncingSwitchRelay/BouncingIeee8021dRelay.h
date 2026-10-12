@@ -26,6 +26,7 @@
 #include "inet/linklayer/configurator/Ieee8021dInterfaceData.h"
 #include "inet/linklayer/ethernet/EtherFrame_m.h"
 #include "../LSSwitch/LSMACTable/LSIMacAddressTable.h"
+#include "../LSSwitch/LSMACTable/LSMacAddressTable.h"
 #include "../Augmented_Mac/AugmentedEtherMac.h"
 #include "../Augmented_Mac/AugmentedEtherMacFullDuplex.h"
 #include "../V2/V2PIFO.h"
@@ -101,6 +102,7 @@ class INET_API BouncingIeee8021dRelay : public LayeredProtocolBase
     MacAddress bridgeAddress;
     IInterfaceTable *ifTable = nullptr;
     LSIMacAddressTable *macTable = nullptr;
+    LSMacAddressTable *macTableComplement = nullptr;
     InterfaceEntry *ie = nullptr;
     bool isStpAware = false;
     std::list<int> port_idx_connected_to_switch_neioghbors;
@@ -215,19 +217,27 @@ class INET_API BouncingIeee8021dRelay : public LayeredProtocolBase
     bool isAggSwitchInDstPod(Packet *packet);
 
     // random drop/failure prob
-    enum DropType {DROP_FAIL = 1};
-    enum DropRecovery {DROP_NOTIF = 1, DEFLECT_ON_DROP};
+    enum DropType {DROP_FAIL = 1, DROP_RANDOM_NORMAL};
+    enum DropRecovery {DROP_NOTIF = 1, RING_BASED, HIERARCHICAL};
     enum LinkIncidentType {NOTIF_LINK_FAILURE = 1, NOTIF_LINK_RECOVERY};
     enum PortDir {PORTDIR_UPSTREAM = 1, PORTDIR_DOWNSTREAM};
     int drop_type = -1;
     int recovery_type = -1;
     double random_fail_prob = -1;
-    bool is_link_failed(int port_idx, Packet *packet);
+    bool is_link_failed(int port_idx);
     void create_notif_header(Packet *packet, std::string notif_name);
     void send_drop_notif(Packet *packet, simtime_t recovery_time);
-    void deflect_on_drop(Packet *packet);
     double failure_period_mean = 0;
     double failure_period_std = 0;
+
+    // randomly dropping packets based on normal distributions
+    double random_drop_normal_prob_tor = -1;
+    double random_drop_normal_prob_agg = -1;
+    double random_drop_normal_prob_core = -1;
+    bool should_drop_random(double drop_prob);
+    bool should_drop_random();
+    void create_dropped_version_of_pkt(Packet *packet);
+
 //    int tmp_fail_cnt = 0;
     std::map<unsigned int, std::list<std::array<simtime_t, 2>>> port_to_failure_range;
     void fill_port_to_failure_range();
@@ -388,7 +398,6 @@ class INET_API BouncingIeee8021dRelay : public LayeredProtocolBase
     std::unordered_set<unsigned long> tree_ids_set;
 
     std::map<std::string, MacAddress> str_to_macaddress_mapper;
-    bool failure_check_and_reroute(Packet *packet, InterfaceEntry *ie, bool skip_notif = false);
 
 
     std::size_t hashWithSeed(std::string value, unsigned int seed) {

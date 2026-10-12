@@ -111,14 +111,6 @@ simple UDPLongBroadcastPasserApp like IApp
         bool use_autoccl = default(false);
     	bool autoccl_allreduce_only = default(false);
         int num_flows_per_ml_query = default(-1);
-        
-        // fattree_k
-        int k = default(-1);
-        // num leafs in leaf spine
-        int num_spines = default(-1);
-        int num_aggs = default(-1);
-        int num_servers = default(-1);	// num servers under each leaf!
-        
                         
         @signal[flowEnded]();
         @signal[flowEndedQueryID]();

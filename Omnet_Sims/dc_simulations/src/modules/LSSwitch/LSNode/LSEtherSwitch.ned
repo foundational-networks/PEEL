@@ -170,7 +170,11 @@ module LSEtherSwitch
         // CIDR
         bool partial_mcast_use_cidr_agg = default(false);
         bool partial_mcast_use_cidr_core = default(false);
-                
+
+		// randomly dropping packets based on normal distributions
+        double random_drop_normal_prob_tor = default(-1);
+        double random_drop_normal_prob_agg = default(-1);
+        double random_drop_normal_prob_core = default(-1);
         
 
     gates:

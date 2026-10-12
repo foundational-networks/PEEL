@@ -172,6 +172,9 @@ simple UDPLongAllgatherInitiatorApp like IApp
         bool use_autoccl = default(false);
     	bool autoccl_allreduce_only = default(false);
         
+        // recovery type
+        string recovery_type = default("");
+        
         @signal[requestSent]();
         @signal[flowNum]();
         @signal[replyLengths]();

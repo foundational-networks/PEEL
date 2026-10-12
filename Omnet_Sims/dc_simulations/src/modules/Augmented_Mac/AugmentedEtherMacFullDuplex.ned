@@ -193,6 +193,13 @@ module AugmentedEtherMacFullDuplex like IEtherMac
         double max_mdf = default(0);        // fabric maximum multiplicative decrease factor
         
         bool limit_all_to_all_rate = default(false);
+        
+        // recovery type
+        string recovery_type = default("");
+        double recovery_wait_time = default(-1);
+        double hierarchical_src_recovery_wait_time = default(-1);
+        double hierarchical_src_broadcast_threshold = default(-1); // should be [0,1.0]
+        double hierarchical_seqnum_gap_bdp_multiplier = default(-1);
 
         @signal[txPk](type=inet::Packet);
         @signal[rxPkOk](type=inet::Packet);

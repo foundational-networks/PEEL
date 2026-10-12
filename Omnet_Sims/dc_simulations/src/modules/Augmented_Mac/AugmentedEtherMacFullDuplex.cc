@@ -63,6 +63,8 @@ AugmentedEtherMacFullDuplex::~AugmentedEtherMacFullDuplex()
     }
     flow_id_to_info_mapper.clear();
 
+    last_pkt_arrived_record.clear();
+
     flow_id_to_receiver_cnp_generation_time_mapper.clear();
     flow_id_to_sender_cnp_generation_time_mapper.clear();
 
@@ -73,6 +75,18 @@ AugmentedEtherMacFullDuplex::~AugmentedEtherMacFullDuplex()
     }
     if (ooo_remaining > 0)
         std::cout << getFullPath() << ": " << ooo_remaining << " records remaining when measuring ooo" << endl;
+
+    if (stored_base_packets_for_recovery.size() > 0) {
+        EV << getFullPath() << std::endl;
+        for (auto store_pkt_info : stored_base_packets_for_recovery) {
+            unsigned long flowid = std::get<0>(store_pkt_info.first);
+            unsigned long seqnum = std::get<1>(store_pkt_info.first);
+            std::cout << flowid << "," << seqnum << " remaining in stored_base_packets_for_recovery" << std::endl;
+            delete store_pkt_info.second;
+        }
+    }
+//    else
+//        std::cout << getFullPath() << ": stored_base_packets_for_recovery is empty!" << std::endl;
 }
 
 void AugmentedEtherMacFullDuplex::initialize(int stage)
@@ -110,6 +124,7 @@ void AugmentedEtherMacFullDuplex::initialize(int stage)
         use_fattree = bool(par("use_fattree"));
 
         server_module_index = getParentModule()->getParentModule()->getIndex();
+        mac_module_index = getParentModule()->getIndex();
 
         measureOOO = bool(par("measureOOO"));
 
@@ -196,6 +211,30 @@ void AugmentedEtherMacFullDuplex::initialize(int stage)
         if (!partial_mcast_use_cidr_agg && partial_mcast_use_cidr_core)
             throw cRuntimeError("How is CIDR enabled on the core but not the aggregate!!!");
 
+        // For SC 2024 Ring based loss recovery for multicast
+        std::string recovery_type_str = par("recovery_type");
+        recovery_wait_time = double(par("recovery_wait_time"));
+        hierarchical_src_recovery_wait_time = double(par("hierarchical_src_recovery_wait_time"));
+        hierarchical_src_broadcast_threshold = double(par("hierarchical_src_broadcast_threshold"));
+        hierarchical_seqnum_gap_bdp_multiplier = double(par("hierarchical_seqnum_gap_bdp_multiplier"));
+
+        if (recovery_type_str.compare("notif") == 0) {
+            recovery_type = DROP_NOTIF;
+        }
+//        else if (recovery_type_str.compare("deflect") == 0) {
+//            recovery_type = DEFLECT_ON_DROP;
+//        }
+        else if (recovery_type_str.compare("ring_based") == 0) {
+            if (recovery_wait_time <= 0)
+                throw cRuntimeError("Invalid recovery_wait_time");
+            recovery_type = RING_BASED;
+        } else if (recovery_type_str.compare("hierarchical") == 0) {
+            if (recovery_wait_time <= 0)
+                throw cRuntimeError("Invalid recovery_wait_time");
+            recovery_type = HIERARCHICAL;
+        }else
+           recovery_type = -1;
+
         beginSendFrames();    //FIXME choose an another stage for it
     }
 }
@@ -232,11 +271,693 @@ void AugmentedEtherMacFullDuplex::handleMessageWhenUp(cMessage *msg)
     processAtHandleMessageFinished();
 }
 
+void AugmentedEtherMacFullDuplex::erase_from_waitedseqs(unsigned long query_id,
+        int src_gpu_idx,
+        unsigned long seq_num,
+        bool is_first_caller) {
+
+    Enter_Method("erase_from_waitedseqs");
+
+
+    auto query_srcgpu_seqnum_tuple = std::make_tuple(query_id, src_gpu_idx, seq_num);
+
+    if (query_srcgpu_to_waitedseqs.find(query_srcgpu_seqnum_tuple) != query_srcgpu_to_waitedseqs.end())
+        query_srcgpu_to_waitedseqs.erase(query_srcgpu_seqnum_tuple);
+
+    std::string self_mac_path = getFullPath();
+    if (is_first_caller) {
+        // call last_packet_arrived for other gpus
+        for (int i = 0; i < num_gpus; i++) {
+
+            // skip self
+            if (i == mac_module_index)
+                continue;
+
+            std::size_t start = self_mac_path.find("eth[");
+            if (start == std::string::npos)
+                throw cRuntimeError("mac was not found in the name!");
+            start += 4; // move to first char after "server["
+            std::size_t end = self_mac_path.find(']', start);
+            if (end == std::string::npos)
+                throw cRuntimeError("2) End not found!");
+            std::string gpu_mac_path = self_mac_path.substr(0, start) +
+                    std::to_string(i) +
+                    self_mac_path.substr(end);
+
+//            std::cout << "updated from " << self_mac_path << " to " <<
+//                    gpu_mac_path << std::endl;
+
+            AugmentedEtherMacFullDuplex* mac_module =
+                    check_and_cast<AugmentedEtherMacFullDuplex*>(getModuleByPath(gpu_mac_path.c_str()));
+            mac_module->erase_from_waitedseqs(query_id, src_gpu_idx, seq_num, false);
+        }
+    }
+
+}
+
+void AugmentedEtherMacFullDuplex::fullfill_waiting_requests(unsigned long query_id,
+        int src_gpu_idx,
+        unsigned long seq_num,
+        bool is_first_caller,
+        bool hierarchical_resent_from_source) {
+
+    Enter_Method("fullfill_waiting_requests");
+
+    auto query_srcgpu_seqnum_tuple = std::make_tuple(query_id, src_gpu_idx, seq_num);
+
+    if (recovery_request_waitlist.find(query_srcgpu_seqnum_tuple) !=
+            recovery_request_waitlist.end()) {
+        if (recovery_request_waitlist[query_srcgpu_seqnum_tuple].size() == 0)
+            throw cRuntimeError("Why is the packet list empty!!");
+
+        EV << "Fullfilling " <<
+                recovery_request_waitlist[query_srcgpu_seqnum_tuple].size() << " waiting requests..." << std::endl;
+        EV << "hierarchical_resent_from_source: " << hierarchical_resent_from_source << std::endl;
+
+        for (auto pkt : recovery_request_waitlist[query_srcgpu_seqnum_tuple]) {
+            // don't do anything since/if the source already multicastedto everyone under this ToR
+            if (hierarchical_resent_from_source) {
+                // just to be safe!
+                perform_deep_delete(pkt);
+            } else
+                pushPacketToQeueue(pkt);
+        }
+
+        if (transmitState == TX_IDLE_STATE) {
+            // Since we might be in IDLE state due to PFC halt while currentTX is not nullptr, make sure
+            // it is nullptr before popping a packet
+            EV << "SEPEHR: Checking if queue is empty? " << txQueue->isEmpty() << endl;
+            if (!txQueue->isEmpty() && !currentTxFrame)
+                popTxQueue();
+            beginSendFrames();
+        }
+
+        recovery_request_waitlist.erase(query_srcgpu_seqnum_tuple);
+    }
+
+    std::string self_mac_path = getFullPath();
+    if (is_first_caller) {
+        // call last_packet_arrived for other gpus
+        for (int i = 0; i < num_gpus; i++) {
+
+            // skip self
+            if (i == mac_module_index)
+                continue;
+
+            std::size_t start = self_mac_path.find("eth[");
+            if (start == std::string::npos)
+                throw cRuntimeError("mac was not found in the name!");
+            start += 4; // move to first char after "server["
+            std::size_t end = self_mac_path.find(']', start);
+            if (end == std::string::npos)
+                throw cRuntimeError("2) End not found!");
+            std::string gpu_mac_path = self_mac_path.substr(0, start) +
+                    std::to_string(i) +
+                    self_mac_path.substr(end);
+
+//            std::cout << "updated from " << self_mac_path << " to " <<
+//                    gpu_mac_path << std::endl;
+
+            AugmentedEtherMacFullDuplex* mac_module =
+                    check_and_cast<AugmentedEtherMacFullDuplex*>(getModuleByPath(gpu_mac_path.c_str()));
+            mac_module->fullfill_waiting_requests(query_id, src_gpu_idx, seq_num, false, hierarchical_resent_from_source);
+        }
+    }
+}
+
+bool AugmentedEtherMacFullDuplex::is_pkt_lost_for_this_server(unsigned long query_id,
+        int src_gpu_idx,
+        unsigned long seq_num,
+        bool is_first_caller) {
+
+    Enter_Method("is_pkt_lost_for_this_server");
+
+    auto query_srcgpu_seqnum_tuple = std::make_tuple(query_id, src_gpu_idx, seq_num);
+    if (query_srcgpu_to_waitedseqs.find(query_srcgpu_seqnum_tuple) !=
+            query_srcgpu_to_waitedseqs.end())
+        return true;
+
+    std::string self_mac_path = getFullPath();
+    if (is_first_caller) {
+        // call last_packet_arrived for other gpus
+        for (int i = 0; i < num_gpus; i++) {
+
+            // skip self
+            if (i == mac_module_index)
+                continue;
+
+            std::size_t start = self_mac_path.find("eth[");
+            if (start == std::string::npos)
+                throw cRuntimeError("mac was not found in the name!");
+            start += 4; // move to first char after "server["
+            std::size_t end = self_mac_path.find(']', start);
+            if (end == std::string::npos)
+                throw cRuntimeError("2) End not found!");
+            std::string gpu_mac_path = self_mac_path.substr(0, start) +
+                    std::to_string(i) +
+                    self_mac_path.substr(end);
+
+//            std::cout << "updated from " << self_mac_path << " to " <<
+//                    gpu_mac_path << std::endl;
+
+            AugmentedEtherMacFullDuplex* mac_module =
+                    check_and_cast<AugmentedEtherMacFullDuplex*>(getModuleByPath(gpu_mac_path.c_str()));
+
+            if (mac_module->is_pkt_lost_for_this_server(query_id, src_gpu_idx, seq_num, false))
+                return true;
+        }
+    }
+
+    return false;
+}
+
+void AugmentedEtherMacFullDuplex::last_pkt_arrived(unsigned long query_id,
+        int src_gpu_idx,
+        bool is_last_packet_origin) {
+
+    Enter_Method("last_pkt_arrived");
+
+    auto query_srcgpu_tuple = std::make_tuple(query_id, src_gpu_idx);
+    last_pkt_arrived_record.insert(query_srcgpu_tuple);
+
+    std::string self_mac_path = getFullPath();
+    if (is_last_packet_origin) {
+        // call last_packet_arrived for other gpus
+        for (int i = 0; i < num_gpus; i++) {
+
+            // skip self
+            if (i == mac_module_index)
+                continue;
+
+            std::size_t start = self_mac_path.find("eth[");
+            if (start == std::string::npos)
+                throw cRuntimeError("mac was not found in the name!");
+            start += 4; // move to first char after "server["
+            std::size_t end = self_mac_path.find(']', start);
+            if (end == std::string::npos)
+                throw cRuntimeError("2) End not found!");
+            std::string gpu_mac_path = self_mac_path.substr(0, start) +
+                    std::to_string(i) +
+                    self_mac_path.substr(end);
+
+//            std::cout << "updated from " << self_mac_path << " to " <<
+//                    gpu_mac_path << std::endl;
+
+            AugmentedEtherMacFullDuplex* mac_module =
+                    check_and_cast<AugmentedEtherMacFullDuplex*>(getModuleByPath(gpu_mac_path.c_str()));
+            mac_module->last_pkt_arrived(query_id, src_gpu_idx, false);
+        }
+    }
+
+    auto query_found_it = query_srcgpu_to_lostseqs.find(query_srcgpu_tuple);
+    if (query_found_it == query_srcgpu_to_lostseqs.end())
+        return;
+
+    EV << ": Last packet arrived for query: " << query_id <<
+            " and src gpu: " << src_gpu_idx <<
+            " -- is the original receiver of the last packet!? " << is_last_packet_origin << std::endl;
+
+
+    EV << "Requiring " << query_found_it->second.size() << " retransmission!" << std::endl;
+    for (auto seqnum : query_found_it->second) {
+        create_and_send_recovery_request(query_id, src_gpu_idx, seqnum);
+    }
+    query_srcgpu_to_lostseqs.erase(query_srcgpu_tuple);
+    hierarchical_max_seqnum.erase(query_srcgpu_tuple);
+}
+
+
+void AugmentedEtherMacFullDuplex::create_recovery_request_version_of_pkt(Packet *packet,
+        MacAddress recovery_mac_address) {
+
+//    return;
+
+    EV << "create_recovery_request_version_of_pkt" << endl;
+
+    std::string pkt_name = packet->getName();
+    if (pkt_name != "data") {
+        std::cout << "packet name: " << packet->getName() << std::endl;
+        throw cRuntimeError("create_recovery_request_version_of_pkt called for non-data packet!!");
+    }
+
+    // reset ttl and hopcount for original packet
+    auto original_pkt = packet->dup();
+
+    // no need to change the name
+    b packetPosition = packet->getFrontOffset();
+    packet->setFrontIteratorPosition(b(0));
+    auto phy_header = packet->removeAtFront<EthernetPhyHeader>();
+    auto eth_header = packet->removeAtFront<EthernetMacHeader>();
+    auto ip_header = packet->removeAtFront<Ipv4Header>();
+    auto udp_header = packet->removeAtFront<UdpHeader>();
+    auto chunk = packet->removeAtFront<GenericAppMsg>();
+    auto fcs_header = packet->peekAtBack<EthernetFcs>(ETHER_FCS_BYTES);
+
+    if (eth_header->getCollective_alg() != BCAST_PARTIAL_MULTICAST)
+        throw cRuntimeError("For now, we assumed that random drop is only implemented for PEEL!");
+
+    b fake_payload_length = B(64);
+//    fake_payload_length -= phy_header->getChunkLength();
+    fake_payload_length -= eth_header->getChunkLength();
+    fake_payload_length -= ip_header->getChunkLength();
+    fake_payload_length -= udp_header->getChunkLength();
+    fake_payload_length -= fcs_header->getChunkLength();
+
+    chunk->setChunkLength(fake_payload_length);
+    packet->insertAtFront(chunk);
+
+    // setIs_pkt_dropped
+    packet->insertAtFront(udp_header);
+    packet->insertAtFront(ip_header);
+
+    eth_header->setIs_loss_recovery_request(true);
+    eth_header->setOriginal_pkt(original_pkt);
+    eth_header->setDest(recovery_mac_address);
+    // disable all peel identifiers
+    eth_header->setIs_pkt_dropped(false);
+    eth_header->setIs_loss_recovery_response(false);
+    eth_header->setDst_tor_idx(-1);
+    eth_header->setMulticast_pkt_in_programmable_core(false);
+    eth_header->setMulticast_pkt_in_CIDR_agg(false);
+    eth_header->setMulticast_pkt_in_CIDR_core(false);
+    packet->insertAtFront(eth_header);
+
+    // remove the phy header and set front iterator to zero
+//    packet->insertAtFront(phy_header);
+//    packet->setFrontIteratorPosition(packetPosition);
+
+    if (packet->getByteLength() < 64)
+        throw cRuntimeError("packet->getBitLength() < B(64)");
+
+}
+
+void AugmentedEtherMacFullDuplex::send_p2p_recovery_request(int recovery_server_idx, Packet* pkt, int specific_source_mac_index) {
+
+    EV << "send_p2p_recovery_request called for " << pkt->str() << std::endl;
+
+    // get the mac address of the recovery server!
+    std::string recovery_mac_path = getFullPath();
+
+    // Replace server[X]
+    {
+        std::size_t start = recovery_mac_path.find("server[");
+        if (start == std::string::npos)
+            throw cRuntimeError("server[...] was not found in the path!");
+
+        start += 7; // after "server["
+        std::size_t end = recovery_mac_path.find(']', start);
+        if (end == std::string::npos)
+            throw cRuntimeError("Closing ] for server[...] was not found!");
+
+        recovery_mac_path =
+            recovery_mac_path.substr(0, start) +
+            std::to_string(recovery_server_idx) +
+            recovery_mac_path.substr(end);
+    }
+
+    // Replace eth[Y] only if requested
+    // use a specific mac index when it is > -1 in hierarchical mode
+    if (specific_source_mac_index >= 0) {
+        EV << "Using specific mac: " << specific_source_mac_index << " when retrieving from the source!" << std::endl;
+        std::size_t start = recovery_mac_path.find("eth[");
+        if (start == std::string::npos)
+            throw cRuntimeError("eth[...] was not found in the path!");
+
+        start += 4; // after "eth["
+        std::size_t end = recovery_mac_path.find(']', start);
+        if (end == std::string::npos)
+            throw cRuntimeError("Closing ] for eth[...] was not found!");
+
+        recovery_mac_path =
+            recovery_mac_path.substr(0, start) +
+            std::to_string(specific_source_mac_index) +
+            recovery_mac_path.substr(end);
+    }
+
+//    EV << self_mac_path << std::endl;
+    EV << "recovery_mac_path: " << recovery_mac_path << std::endl;
+
+    auto eth_header = pkt->peekAtFront<EthernetMacHeader>();
+    if (getMacAddress() != eth_header->getDest()) {
+
+        // properly set requested packet mac address if required!
+
+//        std::cout << "original packet mac address: " << eth_header->getDest() << std::endl;
+//        std::cout << "self mac address: " << getMacAddress() << std::endl;
+
+        b packetPosition = pkt->getFrontOffset();
+        pkt->setFrontIteratorPosition(b(0));
+        auto phy_header = pkt->removeAtFront<EthernetPhyHeader>();
+        auto m_ethernet_header = pkt->removeAtFront<EthernetMacHeader>();
+        m_ethernet_header->setDest(getMacAddress());
+        pkt->insertAtFront(m_ethernet_header);
+        pkt->insertAtFront(phy_header);
+        pkt->setFrontIteratorPosition(packetPosition);
+
+        eth_header = pkt->peekAtFront<EthernetMacHeader>();
+//        throw cRuntimeError("server mac address is not equal to the address saved in the packet!");
+    }
+
+    AugmentedEtherMacFullDuplex* recover_mac_module =
+            check_and_cast<AugmentedEtherMacFullDuplex*>(getModuleByPath(recovery_mac_path.c_str()));
+
+    EV << "recovery mac address: " << recover_mac_module->getMacAddress() << std::endl;
+
+    create_recovery_request_version_of_pkt(pkt, recover_mac_module->getMacAddress());
+
+    EV << "request recovery packet is " << pkt->str() << std::endl;
+
+    pushPacketToQeueue(pkt);
+
+    if (transmitState == TX_IDLE_STATE) {
+        // Since we might be in IDLE state due to PFC halt while currentTX is not nullptr, make sure
+        // it is nullptr before popping a packet
+        EV << "SEPEHR: Checking if queue is empty? " << txQueue->isEmpty() << endl;
+        if (!txQueue->isEmpty() && !currentTxFrame)
+            popTxQueue();
+        beginSendFrames();
+    }
+
+}
+
+void AugmentedEtherMacFullDuplex::create_and_send_recovery_request(unsigned long query_id,
+        int src_gpu_idx,
+        unsigned long seqnum) {
+
+    auto query_srcgpu_seqnum_tuple = std::make_tuple(query_id, src_gpu_idx, seqnum);
+    auto query_srcgpu_tuple = std::make_tuple(query_id, src_gpu_idx);
+    auto lost_pkt_itr = lost_pkt_map.find(query_srcgpu_seqnum_tuple);
+    if (lost_pkt_itr == lost_pkt_map.end()) {
+        std::cout << "query: " << query_id << std::endl;
+        std::cout << "src gpu: " << src_gpu_idx << std::endl;
+        std::cout << "seq num: " << seqnum << std::endl;
+        throw cRuntimeError("Lost packet is not recorded!!!");
+    }
+
+    // comment if below out since
+    // it might be missing if we send packet right away without actually scheduling it in hierarchical
+//    if (query_srcgpu_to_lostseqs.find(query_srcgpu_tuple) == query_srcgpu_to_lostseqs.end())
+//        throw cRuntimeError("Loss packet info missing... query_srcgpu_to_lostseqs.find(query_srcgpu_tuple) == query_srcgpu_to_lostseqs.end()");
+
+    auto timeoutMsg = std::get<0>(lost_pkt_itr->second);
+    Packet* pkt = std::get<1>(lost_pkt_itr->second);
+
+//    std::cout << (timeoutMsg != nullptr) << std::endl;
+//    std::cout << (timeoutMsg->isScheduled()) << std::endl;
+    if (timeoutMsg != nullptr && timeoutMsg->isScheduled())
+        cancelEvent(timeoutMsg);
+    delete timeoutMsg;
+
+    lost_pkt_map.erase(lost_pkt_itr);
+
+    auto eth_header = pkt->peekAtFront<EthernetMacHeader>();
+    std::list<unsigned long> involved_servers_list;
+    std::set<unsigned long> involved_servers_set;
+
+    for (int k = 0; k < eth_header->getInvolved_servers_listArraySize(); k++) {
+        involved_servers_list.push_back(eth_header->getInvolved_servers_list(k));
+        involved_servers_set.insert(eth_header->getInvolved_servers_list(k));
+    }
+
+    // find the node before you in the ring
+    if (involved_servers_list.size() == 0)
+        throw cRuntimeError("We need more than 0 involved servers here");
+
+    int recovery_server_idx = -1;
+    auto involved_server_itr = involved_servers_list.begin();
+    int specific_source_mac_index = -1; // in hierarchical, when going to the source, we want to go to the actual source mac
+    if (recovery_type == RING_BASED) {
+        while (involved_server_itr != involved_servers_list.end()) {
+            if ((*involved_server_itr) == server_module_index) {
+    //            std::cout << server_module_index << " looking for " << (*involved_server_itr) << std::endl;
+                if (involved_server_itr == involved_servers_list.begin()) {
+                    std::cout << "Really!" << std::endl;
+                    for (auto test : involved_servers_list)
+                        std::cout << (test) << std::endl;
+                    throw cRuntimeError("We are needing recovery at the source!!!!");
+                }
+                // read the previous server in the list
+                involved_server_itr--;
+                recovery_server_idx = (*involved_server_itr);
+                break;
+            }
+            involved_server_itr++;
+        }
+    } else if (recovery_type == HIERARCHICAL) {
+        auto custodian_elevator_idx_tuple = compute_custodian_elevator_nodes(
+                query_id,
+                src_gpu_idx,
+                seqnum);
+
+        int custodian_node_id = std::get<0>(custodian_elevator_idx_tuple);
+        int elevator_node_id = std::get<1>(custodian_elevator_idx_tuple);
+
+        if (server_module_index == custodian_node_id && server_module_index == elevator_node_id) {
+            EV << "Server is both custodian and elevator... send to source" << std::endl;
+            throw cRuntimeError("Server cannot be both custodian and elevator!");
+            recovery_server_idx = (*involved_server_itr);
+        } else if (server_module_index == custodian_node_id) {
+            // should either contact the elevator or source if elevator is not in involved set
+            if (involved_servers_set.find(elevator_node_id) == involved_servers_set.end()) {
+                EV << "elevator is not in the set... send to the source" << std::endl;
+                recovery_server_idx = (*involved_server_itr);
+            } else {
+                EV << "elevator is in the set... send to the elevator" << std::endl;
+                recovery_server_idx = elevator_node_id;
+            }
+        } else {
+            // non-custodians should contact the custodian if present in involved set or the source otherwise
+            if (involved_servers_set.find(custodian_node_id) == involved_servers_set.end()) {
+                EV << "custodian is not in the set... send to the source" << std::endl;
+                recovery_server_idx = (*involved_server_itr);
+            } else {
+                EV << "custodian is in the set... send to the custodian" << std::endl;
+                recovery_server_idx = custodian_node_id;
+            }
+        }
+
+        if (recovery_server_idx == (*involved_server_itr)) {
+            specific_source_mac_index = src_gpu_idx;
+        }
+
+    } else
+        throw cRuntimeError("2) Unsupported recovery type!");
+
+    if (recovery_server_idx < 0)
+        throw cRuntimeError("Invalid recover server idx!!");
+
+    EV << "recovery server: " << recovery_server_idx << std::endl;
+
+    send_p2p_recovery_request(recovery_server_idx, pkt, specific_source_mac_index);
+
+}
+
+void AugmentedEtherMacFullDuplex::perform_deep_delete(Packet *pkt) {
+    // for packet*
+    EV << "Performing deep delete!" << std::endl;
+    auto ethernet_header = pkt->peekAtFront<EthernetMacHeader>();
+    for (int k = 0; k < ethernet_header->getCIDR_agg_pktArraySize(); k++) {
+        delete ethernet_header->getCIDR_agg_pkt(k);
+    }
+    for (int k = 0; k < ethernet_header->getCIDR_core_pktArraySize(); k++) {
+        delete ethernet_header->getCIDR_core_pkt(k);
+    }
+    delete pkt;
+}
+
+void AugmentedEtherMacFullDuplex::perform_deep_delete(const Packet *pkt) {
+    // for const packet*
+    perform_deep_delete(pkt->dup()); // deletes nested info
+    delete pkt;
+}
+
+
+
+Packet* AugmentedEtherMacFullDuplex::create_base_pkt_deep_copy(Packet *base_packet) {
+
+    // for peel, copy the base packet as the original packet for drop notification-based recovery
+    auto new_pkt = base_packet->dup();
+
+    // now we should make a deep copy of PEEL rules
+    auto new_pkt_eth_header = new_pkt->removeAtFront<EthernetMacHeader>();
+
+    // base packet is carrying the same packets as original
+    // so we should not delete them
+    // just erase them from base packet list and fill it with copies
+    while(new_pkt_eth_header->getCIDR_agg_pktArraySize() != 0)
+        new_pkt_eth_header->eraseCIDR_agg_pkt(0);
+    while(new_pkt_eth_header->getCIDR_core_pktArraySize() != 0)
+        new_pkt_eth_header->eraseCIDR_core_pkt(0);
+
+
+    auto base_pkt_eth_header = base_packet->peekAtFront<EthernetMacHeader>();
+
+    for (int k = 0; k < base_pkt_eth_header->getCIDR_agg_pktArraySize(); k++)
+        new_pkt_eth_header->insertCIDR_agg_pkt(
+                base_pkt_eth_header->getCIDR_agg_pkt(k)->dup());
+    for (int k = 0; k < base_pkt_eth_header->getCIDR_core_pktArraySize(); k++)
+        new_pkt_eth_header->insertCIDR_core_pkt(
+                base_pkt_eth_header->getCIDR_core_pkt(k)->dup());
+
+    new_pkt->insertAtFront(new_pkt_eth_header);
+
+    return new_pkt;
+}
+
+void AugmentedEtherMacFullDuplex::appropriately_retransmit_packets_at_the_source(unsigned long flow_id,
+        int src_gpu_idx,
+        unsigned long seqnum,
+        int max_ratrans_num) {
+
+    if (recovery_type != HIERARCHICAL)
+        throw cRuntimeError("appropriately_retransmit_packets_at_the_source is only for HIERARCHICAL recovery!");
+
+    auto flow_srcgpu_seqnum_tuple = std::make_tuple(flow_id, src_gpu_idx, seqnum);
+    if (packets_waiting_at_source.find(flow_srcgpu_seqnum_tuple) == packets_waiting_at_source.end())
+        throw cRuntimeError("No info found: packets_waiting_at_source.find(flow_srcgpu_seqnum_tuple) == packets_waiting_at_source.end()");
+
+
+    // set resent_from_source so that custodian does not send it to other later
+    if (hierarchical_src_broadcast_threshold < 0 || hierarchical_src_broadcast_threshold > 1)
+        throw cRuntimeError("hierarchical_src_broadcast_threshold < 0 || hierarchical_src_broadcast_threshold > 1");
+
+    int rebcast_threshold = int(max_ratrans_num * hierarchical_src_broadcast_threshold);
+
+
+    if (packets_waiting_at_source.find(flow_srcgpu_seqnum_tuple) == packets_waiting_at_source.end() ||
+            packets_waiting_at_source[flow_srcgpu_seqnum_tuple].second.size() == 0)
+        throw cRuntimeError("No info found at the source: packets_waiting_at_source.find(flow_srcgpu_seqnum_tuple) == packets_waiting_at_source.end()");
+
+    bool should_rebroadcast = (packets_waiting_at_source[flow_srcgpu_seqnum_tuple].second.size() >= rebcast_threshold);
+
+    EV << "max_ratrans_num: " << max_ratrans_num <<
+            ", rebcast_threshold: " << rebcast_threshold <<
+            ", num packets waiting at the source: " << packets_waiting_at_source[flow_srcgpu_seqnum_tuple].second.size() << std::endl;
+
+
+    if (should_rebroadcast) {
+        EV << "Source is re-broadcasting the packet..." << std::endl;
+
+        auto flowid_seqnum_tuple = std::make_tuple(flow_id, seqnum);
+        if (stored_base_packets_for_recovery.find(flowid_seqnum_tuple) == stored_base_packets_for_recovery.end()) {
+            std::cout << "Looking for " << flow_id << " , " << seqnum << " in stored_base_packets_for_recovery" << std::endl;
+            throw cRuntimeError("We don't have base record in stored_base_packets_for_recovery... that's imposible!");
+        }
+
+        // inject the broadcast message into the queue
+        auto pkt_to_send = create_base_pkt_deep_copy(stored_base_packets_for_recovery[flowid_seqnum_tuple]);
+        auto frame = pkt_to_send->removeAtFront<EthernetMacHeader>();
+        frame->setHierarchical_resent_from_source(true);
+        frame->setDont_drop_again(true);
+        frame->setIs_loss_recovery_response(true);
+        frame->setIs_loss_recovery_request(false);
+        frame->setIs_pkt_dropped(false);
+        pkt_to_send->insertAtFront(frame);
+        pushPacketToQeueue(pkt_to_send);
+
+        // delete the original messages
+        for (auto original_pkt : packets_waiting_at_source[flow_srcgpu_seqnum_tuple].second) {
+            auto original_eth_header = original_pkt->peekAtFront<EthernetMacHeader>();
+            if (original_eth_header->getCIDR_agg_pktArraySize() > 0 ||
+                    original_eth_header->getCIDR_core_pktArraySize() > 0)
+                throw cRuntimeError("At this point we assumed that original should not carry any nested CIDR packets!!");
+            delete original_pkt;
+        }
+    } else {
+        EV << "Source is re-transmitting packets separately" << std::endl;
+
+        // here just make sure every packet is carrying the right dst ToR idx to call multicast downstream
+        // original has already reached the destination so it doesn't carry any nested packets
+        for (auto original_pkt : packets_waiting_at_source[flow_srcgpu_seqnum_tuple].second) {
+            auto original_eth_header = original_pkt->removeAtFront<EthernetMacHeader>();
+            if (original_eth_header->getDst_tor_idx() < 0)
+                throw cRuntimeError("Here, original packet should carry appropriate dst tor idx!");
+
+            if (original_eth_header->getCIDR_agg_pktArraySize() > 0 ||
+                    original_eth_header->getCIDR_core_pktArraySize() > 0)
+                throw cRuntimeError("At this point we assumed that original should not carry any nested CIDR packets!!");
+
+            original_eth_header->setHierarchical_resent_from_source(true);
+            original_eth_header->setDont_drop_again(true);
+            original_eth_header->setIs_loss_recovery_response(true);
+            original_eth_header->setIs_loss_recovery_request(false);
+            original_eth_header->setIs_pkt_dropped(false);
+            original_pkt->insertAtFront(original_eth_header);
+
+            EV << "source resending " << original_pkt->str() << std::endl;
+            pushPacketToQeueue(original_pkt);
+        }
+    }
+
+    packets_waiting_at_source[flow_srcgpu_seqnum_tuple].second.clear();
+    packets_waiting_at_source.erase(flow_srcgpu_seqnum_tuple);
+
+    if (transmitState == TX_IDLE_STATE) {
+        // Since we might be in IDLE state due to PFC halt while currentTX is not nullptr, make sure
+        // it is nullptr before popping a packet
+        EV << "SEPEHR: Checking if queue is empty? " << txQueue->isEmpty() << endl;
+        if (!txQueue->isEmpty() && !currentTxFrame)
+            popTxQueue();
+        beginSendFrames();
+    }
+
+}
+
 void AugmentedEtherMacFullDuplex::handleSelfMessage(cMessage *msg)
 {
-    EV << "Self-message " << msg << " received\n";
+    EV << "Self-message " << msg->str() << " received\n";
 
-    if (msg == endTxMsg)
+    std::string msg_name = msg->getName();
+
+    if (msg_name == "send_later_timer") {
+
+        unsigned long flow_id = msg->par("flow").longValue();
+        unsigned long seqnum = msg->par("seqnum").longValue();
+        auto flow_seqnum_tuple = std::make_tuple(flow_id, seqnum);
+        if (send_later.find(flow_seqnum_tuple) == send_later.end())
+            throw cRuntimeError("packet does not exist in send_later");
+
+        pushPacketToQeueue(send_later[flow_seqnum_tuple]);
+        send_later.erase(flow_seqnum_tuple);
+
+        delete msg;
+
+        if (transmitState == TX_IDLE_STATE) {
+            // Since we might be in IDLE state due to PFC halt while currentTX is not nullptr, make sure
+            // it is nullptr before popping a packet
+            EV << "SEPEHR: Checking if queue is empty? " << txQueue->isEmpty() << endl;
+            if (!txQueue->isEmpty() && !currentTxFrame)
+                popTxQueue();
+            beginSendFrames();
+        }
+
+    } else if (msg_name == "pkt_lost_timer") {
+
+//        EV << "pkt_lost_timer received!" << std::endl;
+
+        unsigned long query_id = msg->par("query").longValue();
+        unsigned long seqnum = msg->par("seqnum").longValue();
+        long srcgpu = msg->par("srcgpu").longValue();
+        create_and_send_recovery_request(query_id, srcgpu, seqnum);
+        auto query_srcgpu_tuple = std::make_tuple(query_id, srcgpu);
+        query_srcgpu_to_lostseqs[query_srcgpu_tuple].erase(seqnum);
+        if (query_srcgpu_to_lostseqs[query_srcgpu_tuple].size() == 0)
+            query_srcgpu_to_lostseqs.erase(query_srcgpu_tuple);
+
+        // dont' delete the message here. it is deleted in create_and_send_recovery_request as it is the countdown message
+//        delete msg;
+
+    } else if (msg_name == "src_retransmission_timer") {
+        unsigned long flow_id = msg->par("flow").longValue();
+        long srcgpu = msg->par("srcgpu").longValue();
+        unsigned long seqnum = msg->par("seqnum").longValue();
+        int max_ratrans_num = msg->par("max_ratrans_num").longValue();
+        if (recovery_type != HIERARCHICAL)
+            throw cRuntimeError("recovery_type != HIERARCHICAL when we received src_retransmission_timer");
+        appropriately_retransmit_packets_at_the_source(flow_id, srcgpu, seqnum, max_ratrans_num);
+        // delete the timer
+        delete msg;
+    } else if (msg == endTxMsg)
         handleEndTxPeriod();
     else if (msg == endIFGMsg)
         handleEndIFGPeriod();
@@ -254,6 +975,7 @@ void AugmentedEtherMacFullDuplex::handleSelfMessage(cMessage *msg)
                 handle_dcqcn_alpha_timer(msg->par("flow_id").longValue(), msg->par("gpu_idx").longValue());
                 break;
             default:
+                std::cout << msg->getName() << std::endl;
                 throw cRuntimeError("DCQCN: Unknown message!");
         }
     } else if (rate_control_type == swift) {
@@ -301,7 +1023,10 @@ void AugmentedEtherMacFullDuplex::startFrameTransmission()
 
     std::string pkt_name = frame->getName();
 
-    if (!isPacketAppropriateForMulticast(pkt_name) || !hdr->getOrca_pkt_seen_agent()) {
+    if (!hdr->getIs_pkt_dropped() &&
+            !hdr->getIs_loss_recovery_request() &&
+            !hdr->getIs_loss_recovery_response() &&
+            (!isPacketAppropriateForMulticast(pkt_name) || !hdr->getOrca_pkt_seen_agent())) {
 
         //swift
         b position = frame->getFrontOffset();
@@ -410,6 +1135,12 @@ void AugmentedEtherMacFullDuplex::startFrameTransmission()
                 throw cRuntimeError("Invalid seq number <= 0");
             eth_header->setSeq_num(payload->getSeq_num());
 
+            eth_header->setIs_last_pkt(payload->getIs_last_pkt());
+            for (int k = 0; k < payload->getInvolved_servers_listArraySize(); k++) {
+                eth_header->insertInvolved_servers_list(
+                        payload->getInvolved_servers_list(k));
+            }
+
             delete temp;
             delete frame_dup;
         }
@@ -417,11 +1148,15 @@ void AugmentedEtherMacFullDuplex::startFrameTransmission()
         frame->insertAtFront(ip_header);
         frame->insertAtFront(eth_header);
         frame->setFrontIteratorPosition(position);
-    } else {
+    } else if (!hdr->getIs_pkt_dropped() &&
+            !hdr->getIs_loss_recovery_request() &&
+            !hdr->getIs_loss_recovery_response()) {
         frame->setFrontIteratorPosition(b(0));
         frame->removeAtFront<EthernetPhyHeader>();
         frame->setFrontIteratorPosition(b(0));
     }
+
+    inject_in_stored_base_packets_for_recovery(frame);
 
     // add preamble and SFD (Starting Frame Delimiter), then send out
     encapsulate(frame);
@@ -829,6 +1564,13 @@ void AugmentedEtherMacFullDuplex::handle_cc_send_timer(unsigned long flow_id, in
             if (payload->getSeq_num() <= 0)
                 throw cRuntimeError("Wow... Invalid seq number <= 0");
             m_eth_header->setSeq_num(payload->getSeq_num());
+
+            m_eth_header->setIs_last_pkt(payload->getIs_last_pkt());
+            for (int k = 0; k < payload->getInvolved_servers_listArraySize(); k++) {
+                m_eth_header->insertInvolved_servers_list(
+                        payload->getInvolved_servers_list(k));
+            }
+
             packet->insertAtFront(m_eth_header);
 
             flowid_pkt_itr->second.insert(std::make_pair(payload->getRequesterID(), packet));
@@ -1095,6 +1837,13 @@ void AugmentedEtherMacFullDuplex::handle_cc_send_timer(unsigned long flow_id, in
                 if (payload->getSeq_num() <= 0)
                     throw cRuntimeError("Wow... Invalid seq number <= 0");
                 m_eth_header->setSeq_num(payload->getSeq_num());
+
+                m_eth_header->setIs_last_pkt(payload->getIs_last_pkt());
+                for (int k = 0; k < payload->getInvolved_servers_listArraySize(); k++) {
+                    m_eth_header->insertInvolved_servers_list(
+                            payload->getInvolved_servers_list(k));
+                }
+
                 packet->insertAtFront(m_eth_header);
 
                 flowid_pkt_itr->second.insert(std::make_pair(payload->getRequesterID(), packet));
@@ -1357,7 +2106,36 @@ double AugmentedEtherMacFullDuplex::get_rate_dividier(int collective, int algori
 
 }
 
+void AugmentedEtherMacFullDuplex::inject_in_stored_base_packets_for_recovery(Packet *packet) {
+
+    auto eth_header = packet->peekAtFront<EthernetMacHeader>();
+    std::string pkt_name = packet->getName();
+    if ((recovery_type == DROP_NOTIF || recovery_type == HIERARCHICAL) &&
+            isPacketAppropriateForMulticast(pkt_name) &&
+            !eth_header->getIs_pkt_dropped() &&
+            !eth_header->getIs_loss_recovery_request() &&
+            !eth_header->getIs_loss_recovery_response() &&
+            !eth_header->getDont_drop_again()) {
+        unsigned long base_flowid;
+        if (eth_header->getCidr_base_flow_id() <= 0) {
+            base_flowid = eth_header->getFlow_id();
+        } else {
+            base_flowid = eth_header->getCidr_base_flow_id();
+        }
+        unsigned long seq_num = eth_header->getSeq_num();
+        if (base_flowid <= 0)
+            throw cRuntimeError("Injecting invalid flow id into the packet!");
+
+        auto flowid_seqnum_tuple = std::make_tuple(base_flowid, seq_num);
+        if (stored_base_packets_for_recovery.find(flowid_seqnum_tuple) == stored_base_packets_for_recovery.end()) {
+            EV << "Injecting " << base_flowid << " , " << seq_num << " into stored_base_packets_for_recovery" << std::endl;
+            stored_base_packets_for_recovery[flowid_seqnum_tuple] = create_base_pkt_deep_copy(packet);
+        }
+    }
+}
+
 void AugmentedEtherMacFullDuplex::pushPacketToQeueue(Packet *packet) {
+
     txQueue->pushPacket(packet);
 }
 
@@ -1373,6 +2151,8 @@ void AugmentedEtherMacFullDuplex::handleUpperPacket(Packet *packet)
     packet->setFrontIteratorPosition(b(0));
     auto eth_header = packet->removeAtFront<EthernetMacHeader>();
     eth_header->setTime_packet_sent_from_src(simTime());
+    eth_header->setSource_server_idx(server_module_index);
+//    eth_header->setTime_packet_sent_from_src(simTime());
     packet->insertAtFront(eth_header);
     packet->setFrontIteratorPosition(position);
 
@@ -1637,6 +2417,13 @@ void AugmentedEtherMacFullDuplex::handleUpperPacket(Packet *packet)
             if (payload->getSeq_num() <= 0)
                 throw cRuntimeError("Wow... Invalid seq number <= 0");
             m_eth_header->setSeq_num(payload->getSeq_num());
+
+            m_eth_header->setIs_last_pkt(payload->getIs_last_pkt());
+            for (int k = 0; k < payload->getInvolved_servers_listArraySize(); k++) {
+                m_eth_header->insertInvolved_servers_list(
+                        payload->getInvolved_servers_list(k));
+            }
+
             packet->insertAtFront(m_eth_header);
 
             flowid_pkt_itr->second.insert(std::make_pair(payload->getRequesterID(), packet));
@@ -1888,6 +2675,13 @@ void AugmentedEtherMacFullDuplex::handleUpperPacket(Packet *packet)
                 if (payload->getSeq_num() <= 0)
                     throw cRuntimeError("Wow... Invalid seq number <= 0");
                 m_eth_header->setSeq_num(payload->getSeq_num());
+
+                m_eth_header->setIs_last_pkt(payload->getIs_last_pkt());
+                for (int k = 0; k < payload->getInvolved_servers_listArraySize(); k++) {
+                    m_eth_header->insertInvolved_servers_list(
+                            payload->getInvolved_servers_list(k));
+                }
+
                 packet->insertAtFront(m_eth_header);
 
                 flowid_pkt_itr->second.insert(std::make_pair(payload->getRequesterID(), packet));
@@ -2051,6 +2845,10 @@ void AugmentedEtherMacFullDuplex::dcqcn_generate_congestion_notification(Packet*
     eth_header->setRsbf_redundant_send(false);
     eth_header->setIs_drop_notif(false);
     eth_header->setDst_tor_idx(-1);
+    eth_header->setIs_last_pkt(false);
+    eth_header->setIs_pkt_dropped(false);
+    eth_header->setIs_loss_recovery_request(false);
+    eth_header->setIs_loss_recovery_response(false);
     cnp_packet->insertAtFront(eth_header);
 
     EV << "Inserting EthernetFcs" << endl;
@@ -2260,6 +3058,10 @@ void AugmentedEtherMacFullDuplex::create_ack_header(Packet *ack_pkt) {
     eth_header->setRsbf_redundant_send(false);
     eth_header->setDst_tor_idx(-1);
     eth_header->setHop_count(0);
+    eth_header->setIs_last_pkt(false);
+    eth_header->setIs_pkt_dropped(false);
+    eth_header->setIs_loss_recovery_request(false);
+    eth_header->setIs_loss_recovery_response(false);
 
     if (eth_header->getCidr_base_flow_id() >= 0) {
         EV << "The base flow id is different that what we got: " << eth_header->getCidr_base_flow_id()
@@ -2391,6 +3193,270 @@ void AugmentedEtherMacFullDuplex::swift_update_send_rates(simtime_t send_time,
 
 }
 
+unsigned long AugmentedEtherMacFullDuplex::computeHash(const std::string s) {
+    return static_cast<unsigned long>(std::hash<std::string>{}(s));
+}
+
+std::tuple<int,int> AugmentedEtherMacFullDuplex::compute_custodian_elevator_nodes(unsigned long queryid,
+        int srcgpu, unsigned long seqnum) {
+
+    // servers under the same ToR must share the same custodian and elevator nodes
+    int tor_idx = int (server_module_index / num_servers_under_each_leaf);
+
+    std::string base_id = std::to_string(tor_idx) +
+            std::to_string(queryid) +
+            std::to_string(srcgpu) +
+            std::to_string(seqnum);
+    std::string custodian_id = base_id + "1";
+    std::string elevator_id = base_id + "2";
+
+    unsigned long custodian_hash = computeHash(custodian_id);
+    unsigned long elevator_hash = computeHash(elevator_id);
+
+    // custodian and elevator being the same can cause loop problems
+    if (custodian_hash % num_servers_under_each_leaf ==
+            elevator_hash % num_servers_under_each_leaf)
+        elevator_hash++;
+
+    EV << "custodian_hash: " << custodian_hash << ", elevator_hash: " << elevator_hash << std::endl;
+
+    int base_server_idx = server_module_index - (server_module_index % num_servers_under_each_leaf);
+    int custodian_node_idx = base_server_idx + (custodian_hash % num_servers_under_each_leaf);
+    int elevator_node_idx = base_server_idx + (elevator_hash % num_servers_under_each_leaf);
+
+    // custodian and elevator being the same can cause loop problems
+    if (custodian_node_idx == elevator_node_idx)
+        throw cRuntimeError("custodian_node_idx == elevator_node_idx... they should be different");
+
+    EV << "custodian node: " << custodian_node_idx <<
+            ", elevator node id: " << elevator_node_idx << std::endl;
+
+    return std::make_tuple(custodian_node_idx, elevator_node_idx);
+}
+
+unsigned int AugmentedEtherMacFullDuplex::get_max_num_retrans_requests(Packet* packet) {
+    auto tmp_eth_header = packet->peekAtFront<EthernetMacHeader>();
+
+    unsigned long base_flowid;
+    if (tmp_eth_header->getCidr_base_flow_id() <= 0) {
+        base_flowid = tmp_eth_header->getFlow_id();
+    } else {
+        base_flowid = tmp_eth_header->getCidr_base_flow_id();
+    }
+    auto flowid_seqnum_tuple = std::make_tuple(base_flowid, tmp_eth_header->getSeq_num());
+    if (stored_base_packets_for_recovery.find(flowid_seqnum_tuple) == stored_base_packets_for_recovery.end()) {
+        std::cout << "Looking for " << base_flowid << " , " << tmp_eth_header->getSeq_num() << " in stored_base_packets_for_recovery" << std::endl;
+        throw cRuntimeError("We need base record in stored_base_packets_for_recovery here!");
+    }
+
+    Packet* pkt = stored_base_packets_for_recovery[flowid_seqnum_tuple];
+
+    if (tmp_eth_header->getCollective_alg() != BCAST_PARTIAL_MULTICAST)
+        throw cRuntimeError("get_max_num_retrans_requests is not implemented for anything other than PEEL.");
+
+    auto eth_header = pkt->peekAtFront<EthernetMacHeader>();
+
+    unsigned long agg_cidr_group_member_count = eth_header->getAgg_cidr_group_member_count();
+    unsigned long core_cidr_group_member_count = eth_header->getCore_cidr_group_member_count();
+
+    EV << "agg_cidr_group_member_count: " << agg_cidr_group_member_count <<
+            ", core_cidr_group_member_count: " << core_cidr_group_member_count << std::endl;
+
+    int member_count;
+
+    if (core_cidr_group_member_count <= 1)
+        member_count = agg_cidr_group_member_count;
+    else
+        member_count = agg_cidr_group_member_count * core_cidr_group_member_count;
+
+    return std::max(1, member_count);
+}
+
+unsigned int AugmentedEtherMacFullDuplex::get_max_num_retrans_requests(int agg_cidr_group_member_count, int core_cidr_group_member_count) {
+
+    EV << "agg_cidr_group_member_count: " << agg_cidr_group_member_count <<
+            ", core_cidr_group_member_count: " << core_cidr_group_member_count << std::endl;
+
+    int member_count;
+
+    if (core_cidr_group_member_count <= 1)
+        member_count = agg_cidr_group_member_count;
+    else
+        member_count = agg_cidr_group_member_count * core_cidr_group_member_count;
+
+    return std::max(1, member_count);
+}
+
+void AugmentedEtherMacFullDuplex::notify_src_of_completed(unsigned long base_flowid, int src_gpu_idx,
+                unsigned long seq_num, int src_server_idx) {
+
+
+    // get the mac address of the recovery server!
+    std::string src_mac_path = getFullPath();
+
+    {
+        std::size_t start = src_mac_path.find("server[");
+        if (start == std::string::npos)
+            throw cRuntimeError("server[...] was not found in the path!");
+
+        start += 7; // after "server["
+        std::size_t end = src_mac_path.find(']', start);
+        if (end == std::string::npos)
+            throw cRuntimeError("Closing ] for server[...] was not found!");
+
+        src_mac_path =
+                src_mac_path.substr(0, start) +
+            std::to_string(src_server_idx) +
+            src_mac_path.substr(end);
+    }
+
+    {
+        std::size_t start = src_mac_path.find("eth[");
+        if (start == std::string::npos)
+            throw cRuntimeError("eth[...] was not found in the path!");
+
+        start += 4; // after "eth["
+        std::size_t end = src_mac_path.find(']', start);
+        if (end == std::string::npos)
+            throw cRuntimeError("Closing ] for eth[...] was not found!");
+
+        src_mac_path =
+                src_mac_path.substr(0, start) +
+            std::to_string(src_gpu_idx) +
+            src_mac_path.substr(end);
+    }
+
+    EV << "src_mac_path: " << src_mac_path << std::endl;
+
+    AugmentedEtherMacFullDuplex* src_mac_module =
+                check_and_cast<AugmentedEtherMacFullDuplex*>(getModuleByPath(src_mac_path.c_str()));
+    src_mac_module->pkt_successfully_rcvd(base_flowid, seq_num, server_module_index);
+
+}
+
+void AugmentedEtherMacFullDuplex::pkt_successfully_rcvd(unsigned long base_flowid,
+                unsigned long seq_num, int receiver_server_idx) {
+
+    Enter_Method("pkt_successfully_rcvd");
+
+    auto flowid_seqnum_tuple = std::make_tuple(base_flowid, seq_num);
+
+    if (stored_base_packets_for_recovery.find(flowid_seqnum_tuple) == stored_base_packets_for_recovery.end()) {
+        // why this matters
+        // since we are re-broadcasting, a node might get a packet twice and notify the source twice
+        // if before replicated notification, the seq num actually completes, we delete it and then when the redundant
+        // notif arrives, we don't have any data in stored_base_packets_for_recovery... so we shouldn't do anything!
+        EV << base_flowid << " , " << seq_num << " is already complete! no need to do anything!" << std::endl;
+        return;
+    }
+
+    if (successful_receivers_recorded.find(flowid_seqnum_tuple) == successful_receivers_recorded.end()) {
+        std::set<int> tmp_set;
+        successful_receivers_recorded[flowid_seqnum_tuple] = tmp_set;
+    }
+
+    successful_receivers_recorded[flowid_seqnum_tuple].insert(receiver_server_idx);
+
+    Packet* base_pkt = stored_base_packets_for_recovery[flowid_seqnum_tuple];
+    auto base_pkt_eth_header = base_pkt->peekAtFront<EthernetMacHeader>();
+
+    int max_num_receivers;
+    int collective_alg = base_pkt_eth_header->getCollective_alg();
+    if (collective_alg == BCAST_PARTIAL_MULTICAST) {
+
+        // this representes number of tors
+        int max_num_retrans_requests = get_max_num_retrans_requests(base_pkt_eth_header->getAgg_cidr_group_member_count(),
+                base_pkt_eth_header->getCore_cidr_group_member_count());
+
+        max_num_receivers = max_num_retrans_requests * num_servers_under_each_leaf;
+
+        int receiver_tor = int(receiver_server_idx / num_servers_under_each_leaf);
+        int src_tor = int(server_module_index / num_servers_under_each_leaf);
+        if (src_tor == receiver_tor) {
+            EV << "Receiver and source are under the same tor, reduce expected receivers by 1" << std::endl;
+            max_num_receivers--;
+        }
+    } else if (collective_alg == BCAST_NETWORK_ASSISTED) {
+        max_num_receivers = std::ceil(base_pkt_eth_header->getCollective_scale() * 1.0 / num_gpus);
+    } else
+        max_num_receivers = 1;  // unicast cases
+
+    EV << base_flowid << " , " << seq_num << std::endl;
+    EV << "# of expected successfull receives: " << max_num_receivers <<
+            ", actual receives: " << successful_receivers_recorded[flowid_seqnum_tuple].size() << std::endl;
+
+    if (successful_receivers_recorded[flowid_seqnum_tuple].size() >= (max_num_receivers)) {
+        EV << base_flowid << "," << seq_num << " completed... remove base packet" << std::endl;
+//        successful_receivers_recorded.erase(flowid_seqnum_tuple);
+        if (stored_base_packets_for_recovery.find(flowid_seqnum_tuple) == stored_base_packets_for_recovery.end()) {
+            std::cout << "Looking for " << base_flowid << " , " << seq_num << " in stored_base_packets_for_recovery" << std::endl;
+            throw cRuntimeError("when was base packet deleted!!!");
+        }
+
+        auto base_pkt = stored_base_packets_for_recovery[flowid_seqnum_tuple];
+        auto ethernet_header = base_pkt->peekAtFront<EthernetMacHeader>();
+
+        unsigned long base_flowid;
+        if (ethernet_header->getCidr_base_flow_id() <= 0) {
+            base_flowid = ethernet_header->getFlow_id();
+        } else {
+            base_flowid = ethernet_header->getCidr_base_flow_id();
+        }
+        auto flow_srcgpu_seqnum_tuple = std::make_tuple(base_flowid,
+                ethernet_header->getSrc_gpu_idx(),
+                ethernet_header->getSeq_num());
+        if (packets_waiting_at_source.find(flow_srcgpu_seqnum_tuple) != packets_waiting_at_source.end()) {
+            // this packet is done... cancel whatever request you have for it
+            if (packets_waiting_at_source[flow_srcgpu_seqnum_tuple].first != nullptr &&
+                    packets_waiting_at_source[flow_srcgpu_seqnum_tuple].first->isScheduled())
+                cancelEvent(packets_waiting_at_source[flow_srcgpu_seqnum_tuple].first);
+            delete packets_waiting_at_source[flow_srcgpu_seqnum_tuple].first;
+            for (auto m_pkt : packets_waiting_at_source[flow_srcgpu_seqnum_tuple].second)
+                delete m_pkt;
+            packets_waiting_at_source[flow_srcgpu_seqnum_tuple].second.clear();
+            packets_waiting_at_source.erase(flow_srcgpu_seqnum_tuple);
+        }
+
+        perform_deep_delete(base_pkt);
+        stored_base_packets_for_recovery.erase(flowid_seqnum_tuple);
+
+    }
+}
+
+int AugmentedEtherMacFullDuplex::get_hierarchical_pkt_num_gap_threshold() {
+
+    if (hierarchical_seqnum_gap_bdp_multiplier <= 0)
+        throw cRuntimeError("hierarchical_seqnum_gap_bdp_multiplier <= 0");
+
+    if (hierarchical_seqnum_gap_bdp_multiplier < 1)
+        throw cRuntimeError("hierarchical_seqnum_gap_bdp_multiplier < 1... ARE U SURE!?");
+
+    // since our seq num is in packet number, this function returns BDP devided by MTU
+
+    /*
+     * BDP = min_RTT * bw (for now I hardcode 100 Gbps)
+     * min_RTT is almost hop_count * mtu / bw * 2 (round-trip)
+     * (ignoring small propagation delays
+     * BDP is almost hop_count * mtu * 2
+     * so BDP/MTU in pkt num is hop_count * 2
+     */
+
+    int hop_count = -1;
+    if (use_fattree) {
+        hop_count = 6;
+    } else {
+        hop_count = 4;
+    }
+
+    int pkt_num_bdp = 2 * hop_count;
+
+    int scale_pkt_num_bdp = int(hierarchical_seqnum_gap_bdp_multiplier * pkt_num_bdp);
+
+    EV << "scale_pkt_num_bdp: " << scale_pkt_num_bdp << std::endl;
+
+    return scale_pkt_num_bdp;
+}
+
 void AugmentedEtherMacFullDuplex::processMsgFromNetwork(EthernetSignal *signal)
 {
     EV_INFO << signal << " received from network." << endl;
@@ -2431,6 +3497,10 @@ void AugmentedEtherMacFullDuplex::processMsgFromNetwork(EthernetSignal *signal)
 
     auto ethernet_header = packet->peekAtFront<EthernetMacHeader>();
 
+//    std::cout << getFullPath() << ": " << ethernet_header->getCidr_base_flow_id() << std::endl;
+//    std::cout << getFullPath() << ": " << ethernet_header->getCidr_base_src_gpu_idx() << std::endl;
+//    std::cout << "----------------------------" << std::endl;
+
     // drop if it's redundant RSBF packet
     if (ethernet_header->getRsbf_redundant_send()) {
         EV << "RSBF redundant sent! Dropping..." << endl;
@@ -2442,6 +3512,402 @@ void AugmentedEtherMacFullDuplex::processMsgFromNetwork(EthernetSignal *signal)
         EV << "treeFin packet received... dropping!!" << endl;
         delete packet;
         return;
+    }
+
+//    std::cout << ethernet_header->getFlow_id() << std::endl;
+//    std::cout << ethernet_header->getSrc_gpu_idx() << std::endl;
+//    std::cout << ethernet_header->getTotal_length() << std::endl;
+//    std::cout << "----------------" << std::endl;
+
+//    std::cout << getFullPath() << std::endl;
+//    for (int i = 0; i < ethernet_header->getDst_idx_listArraySize(); i++) {
+//        std::cout << ethernet_header->getDst_idx_list(i) << ", ";
+//    }
+//    std::cout << std::endl;
+//    std::cout << "-----------------------" << std::endl;
+
+    if (int(ethernet_header->getIs_pkt_dropped()) +
+            int(ethernet_header->getIs_loss_recovery_request()) +
+            int(ethernet_header->getIs_loss_recovery_response()) > 1) {
+        std::cout << packet->str() << std::endl;
+        std::cout << ethernet_header->getIs_pkt_dropped() << std::endl;
+        std::cout << ethernet_header->getIs_loss_recovery_request() << std::endl;
+        std::cout << ethernet_header->getIs_loss_recovery_response() << std::endl;
+        throw cRuntimeError("A packet cannot be dropped, recovery request and recovery response at the same time!");
+    }
+
+    if (ethernet_header->getIs_pkt_dropped()) {
+
+        // this is different from is_drop_notif
+        // drop notif is for when you are using switch generated drop notifications
+        EV << "dropped packet is " << packet->str() << std::endl;
+        auto original_pkt = ethernet_header->getOriginal_pkt()->dup();
+        delete ethernet_header->getOriginal_pkt();
+        delete packet;
+        packet = original_pkt;
+        EV << "original packet is " << packet->str() << std::endl;
+
+        b packetPosition = packet->getFrontOffset();
+        packet->setFrontIteratorPosition(b(0));
+        auto phy_header = packet->removeAtFront<EthernetPhyHeader>();
+        auto eth_header = packet->removeAtFront<EthernetMacHeader>();
+
+        eth_header->setIs_pkt_dropped(false);
+        eth_header->setIs_loss_recovery_request(false);
+        eth_header->setIs_loss_recovery_response(false);
+        packet->insertAtFront(eth_header);
+        packet->insertAtFront(phy_header);
+        packet->setFrontIteratorPosition(packetPosition);
+
+        ethernet_header = packet->peekAtFront<EthernetMacHeader>();
+
+        EV << getFullPath() << ": Recording lost packet --- query: " << ethernet_header->getQuery_id() <<
+                ", src gpu: " << ethernet_header->getSrc_gpu_idx() <<
+                ", seqnum: " << ethernet_header->getSeq_num() << std::endl;
+
+        if (recovery_type == RING_BASED) {
+
+            EV << "# servers involved in the collective: " <<
+                    ethernet_header->getInvolved_servers_listArraySize() << std::endl;
+            if (ethernet_header->getInvolved_servers_listArraySize() == 0)
+                throw cRuntimeError("recovery_type == RING_BASED && \
+                                eth_header->getInvolved_servers_listArraySize() == 0");
+            for (int k = 0; k < ethernet_header->getInvolved_servers_listArraySize(); k++) {
+                EV << ethernet_header->getInvolved_servers_list(k) << ", ";
+            }
+            EV << std::endl;
+
+            auto query_srcgpu_seqnum_tuple = std::make_tuple(
+                    ethernet_header->getQuery_id(),
+                    ethernet_header->getSrc_gpu_idx(),
+                    ethernet_header->getSeq_num());
+
+            auto query_srcgpu_tuple = std::make_tuple(
+                    ethernet_header->getQuery_id(),
+                    ethernet_header->getSrc_gpu_idx());
+
+            if (lost_pkt_map.find(query_srcgpu_seqnum_tuple) != lost_pkt_map.end()) {
+                EV << ethernet_header->getQuery_id() << "," <<
+                        ethernet_header->getSeq_num() << " already exists... delete packet!" << std::endl;
+                delete packet;
+//                throw cRuntimeError("Multiple notifications for the same packet received!");
+                return;
+            }
+
+            auto pkt_lost_timer = new cMessage("pkt_lost_timer");
+            lost_pkt_map.insert(std::make_pair(query_srcgpu_seqnum_tuple,
+                    std::make_tuple(pkt_lost_timer, packet)));
+
+            pkt_lost_timer->addPar("query") = ethernet_header->getQuery_id();
+            pkt_lost_timer->addPar("seqnum") = ethernet_header->getSeq_num();
+            pkt_lost_timer->addPar("srcgpu") = ethernet_header->getSrc_gpu_idx();
+
+            if (query_srcgpu_to_lostseqs.find(query_srcgpu_tuple) ==
+                    query_srcgpu_to_lostseqs.end()) {
+                std::set<unsigned long> tmp_set;
+                query_srcgpu_to_lostseqs[query_srcgpu_tuple] = tmp_set;
+            }
+            query_srcgpu_to_lostseqs[query_srcgpu_tuple].insert(
+                    ethernet_header->getSeq_num());
+
+            query_srcgpu_to_waitedseqs.insert(query_srcgpu_seqnum_tuple);
+
+            if (recovery_wait_time <= 0)
+                throw cRuntimeError("recovery_wait_time <= 0");
+
+            double wait_time = recovery_wait_time;
+            if (last_pkt_arrived_record.find(query_srcgpu_tuple) != last_pkt_arrived_record.end()) {
+                EV << "Last packet already arrived... no need to wait... request re-transmission right away!!" << std::endl;
+                wait_time = 0;
+            } else
+                EV << "did not find " << ethernet_header->getQuery_id() << "," <<
+                    ethernet_header->getSrc_gpu_idx() << " in last_pkt_arrived_record" << std::endl;
+
+
+            scheduleAt(simTime() + wait_time, pkt_lost_timer);
+
+        } else if (recovery_type == HIERARCHICAL) {
+
+            EV << "# servers involved in the collective: " <<
+                    ethernet_header->getInvolved_servers_listArraySize() << std::endl;
+            if (ethernet_header->getInvolved_servers_listArraySize() == 0)
+                throw cRuntimeError("recovery_type == HIERARCHICAL && \
+                                eth_header->getInvolved_servers_listArraySize() == 0");
+
+            auto query_srcgpu_seqnum_tuple = std::make_tuple(
+                    ethernet_header->getQuery_id(),
+                    ethernet_header->getSrc_gpu_idx(),
+                    ethernet_header->getSeq_num());
+
+            auto query_srcgpu_tuple = std::make_tuple(
+                    ethernet_header->getQuery_id(),
+                    ethernet_header->getSrc_gpu_idx());
+
+            if (lost_pkt_map.find(query_srcgpu_seqnum_tuple) != lost_pkt_map.end()) {
+                EV << ethernet_header->getQuery_id() << "," <<
+                        ethernet_header->getSeq_num() << " already exists... delete packet!" << std::endl;
+                // original already lost its nested data so no need for deep delete
+                delete packet;
+//                throw cRuntimeError("Multiple notifications for the same packet received!");
+                return;
+            }
+
+            long hierarchical_pkt_num_gap_threshold = get_hierarchical_pkt_num_gap_threshold();
+            if (hierarchical_pkt_num_gap_threshold <= 1)
+                throw cRuntimeError("hierarchical_seq_num_gap_threshold must be > 1");
+
+            // when should we send packet right away
+            // if the last packet for this flow has already arrived
+            // or
+            // max seq num - missing packet seq num > hierarchical_seq_num_gap_threshold
+            bool should_pkt_be_sent_right_way = (last_pkt_arrived_record.find(query_srcgpu_tuple) != last_pkt_arrived_record.end()) ||
+                    (hierarchical_max_seqnum.find(query_srcgpu_tuple) != hierarchical_max_seqnum.end() &&
+                            hierarchical_max_seqnum[query_srcgpu_tuple] - ethernet_header->getSeq_num() >= hierarchical_pkt_num_gap_threshold);
+
+            if (should_pkt_be_sent_right_way) {
+
+                EV << "Must send packet right away!!" << std::endl;
+
+                unsigned long m_queryid = ethernet_header->getQuery_id();
+                unsigned long m_seqnum = ethernet_header->getSeq_num();
+                int m_srcgpu = ethernet_header->getSrc_gpu_idx();
+                // as we are sending the request right away...
+                // no need to record anything in query_srcgpu_to_lostseqs
+                query_srcgpu_to_waitedseqs.insert(query_srcgpu_seqnum_tuple);
+                lost_pkt_map.insert(std::make_pair(query_srcgpu_seqnum_tuple,
+                        std::make_tuple(nullptr, packet)));
+                create_and_send_recovery_request(m_queryid, m_srcgpu, m_seqnum);
+
+            } else {
+
+                EV << "must keep packet with a timer for now as the gap condition is not met!" << std::endl;
+
+                auto pkt_lost_timer = new cMessage("pkt_lost_timer");
+                lost_pkt_map.insert(std::make_pair(query_srcgpu_seqnum_tuple,
+                        std::make_tuple(pkt_lost_timer, packet)));
+
+                pkt_lost_timer->addPar("query") = ethernet_header->getQuery_id();
+                pkt_lost_timer->addPar("seqnum") = ethernet_header->getSeq_num();
+                pkt_lost_timer->addPar("srcgpu") = ethernet_header->getSrc_gpu_idx();
+
+                if (query_srcgpu_to_lostseqs.find(query_srcgpu_tuple) ==
+                        query_srcgpu_to_lostseqs.end()) {
+                    std::set<unsigned long> tmp_set;
+                    query_srcgpu_to_lostseqs[query_srcgpu_tuple] = tmp_set;
+                }
+                query_srcgpu_to_lostseqs[query_srcgpu_tuple].insert(
+                        ethernet_header->getSeq_num());
+
+                query_srcgpu_to_waitedseqs.insert(query_srcgpu_seqnum_tuple);
+
+                if (recovery_wait_time <= 0)
+                    throw cRuntimeError("recovery_wait_time <= 0");
+
+                // for now don't set the timer and only rely on either the last packet or more packets comming in
+                // might want to change this later
+//                scheduleAt(simTime() + recovery_wait_time, pkt_lost_timer);
+
+            }
+
+        } else {
+            std::cout << "Recovery type: " << recovery_type << std::endl;
+            throw cRuntimeError("Unsupported recovery_type!");
+        }
+
+        return;
+    }
+    if (ethernet_header->getIs_loss_recovery_request()) {
+
+        EV << "Loss recovery request received" << std::endl;
+        EV << "recovery request packet is " << packet->str() << std::endl;
+
+        b with_phy_header_position = packet->getFrontOffset();;
+
+        auto original_pkt = ethernet_header->getOriginal_pkt()->dup();
+        perform_deep_delete(ethernet_header->getOriginal_pkt());
+        perform_deep_delete(packet);
+        packet = original_pkt;
+
+        b packetPosition = packet->getFrontOffset();
+        packet->setFrontIteratorPosition(b(0));
+        auto phy_header = packet->removeAtFront<EthernetPhyHeader>();
+        auto eth_header = packet->removeAtFront<EthernetMacHeader>();
+        eth_header->setIs_pkt_dropped(false);
+        eth_header->setIs_loss_recovery_request(false);
+        eth_header->setIs_loss_recovery_response(true);
+        eth_header->setDst_tor_idx(-1);
+        eth_header->setMulticast_pkt_in_programmable_core(false);
+        eth_header->setMulticast_pkt_in_CIDR_agg(false);
+        eth_header->setMulticast_pkt_in_CIDR_core(false);
+        packet->insertAtFront(eth_header);
+
+        // no need to add phy_header again and keep the position as 0
+//        packet->insertAtFront(phy_header);
+//        packet->setFrontIteratorPosition(packetPosition);
+
+        ethernet_header = packet->peekAtFront<EthernetMacHeader>();
+        std::list<unsigned long> involved_servers_list;
+        for (int k = 0; k < ethernet_header->getInvolved_servers_listArraySize(); k++) {
+            involved_servers_list.push_back(ethernet_header->getInvolved_servers_list(k));
+        }
+        // find the node before you in the ring
+        if (involved_servers_list.size() == 0)
+            throw cRuntimeError("We need more than 0 involved servers here");
+        auto involved_server_itr = involved_servers_list.begin();
+        int src_server_idx = (*involved_server_itr);
+
+        EV << "corresponding recovery response packet is " << packet->str() << std::endl;
+
+        int custodian_node_id = -1;
+        int elevator_node_id = -1;
+        if (recovery_type == HIERARCHICAL) {
+            auto custodian_elevator_idx_tuple = compute_custodian_elevator_nodes(
+                    ethernet_header->getQuery_id(),
+                    ethernet_header->getSrc_gpu_idx(),
+                    ethernet_header->getSeq_num());
+
+            custodian_node_id = std::get<0>(custodian_elevator_idx_tuple);
+            elevator_node_id = std::get<1>(custodian_elevator_idx_tuple);
+        }
+
+        if (is_pkt_lost_for_this_server(ethernet_header->getQuery_id(),
+                ethernet_header->getSrc_gpu_idx(),
+                ethernet_header->getSeq_num(),
+                true)) {
+            // whether it is ring-based and we're waiting for the neighbor to send us
+            // or we are custodian and have taken proper action (contact elevator/source)
+            // we must wait!packet
+            // only difference is that if we are the elevator, then we must contact source
+            if (server_module_index == elevator_node_id) {
+                // if this is true, then we are hierarchical and this node is elevator
+                EV << "Elevator got the request from custodian... send it to source: " << src_server_idx << std::endl;
+                // create a fake phy header just for processing
+                auto phy_header = makeShared<EthernetPhyHeader>();
+                packet->insertAtFront(phy_header);
+                packet->setFrontIteratorPosition(with_phy_header_position);
+                send_p2p_recovery_request(src_server_idx, packet, ethernet_header->getSrc_gpu_idx());
+            } else {
+                // either ring-based or custodian
+                EV << "Packet is also lost for us... keep waiting..." << std::endl;
+                auto query_srcgpu_seqnum_tuple = std::make_tuple(ethernet_header->getQuery_id(),
+                                ethernet_header->getSrc_gpu_idx(),
+                                ethernet_header->getSeq_num());
+                if (recovery_request_waitlist.find(query_srcgpu_seqnum_tuple) ==
+                        recovery_request_waitlist.end()) {
+                    std::list<Packet*> tmp_list;
+                    recovery_request_waitlist[query_srcgpu_seqnum_tuple] = tmp_list;
+                }
+                recovery_request_waitlist[query_srcgpu_seqnum_tuple].push_back(packet);
+            }
+        } else {
+
+            if (recovery_type == HIERARCHICAL && server_module_index == src_server_idx) {
+                EV << "source received re-transmission request in hierarchical mode..." << std::endl;
+                // when in hierarchical mode, sources behavior changes with the situation
+                // at the source to isolated different multicast trees from one another, we use base_flow id
+
+                unsigned long base_flowid;
+                if (ethernet_header->getCidr_base_flow_id() <= 0) {
+                    base_flowid = ethernet_header->getFlow_id();
+                } else {
+                    base_flowid = ethernet_header->getCidr_base_flow_id();
+                }
+
+                auto flow_srcgpu_seqnum_tuple = std::make_tuple(base_flowid,
+                        ethernet_header->getSrc_gpu_idx(),
+                        ethernet_header->getSeq_num());
+
+                // if base packet is already deleted... no need to re-transmit
+                auto flowid_seqnum_tuple = std::make_tuple(base_flowid, ethernet_header->getSeq_num());
+                if (stored_base_packets_for_recovery.find(flowid_seqnum_tuple) == stored_base_packets_for_recovery.end()) {
+                    EV << "Packet is already successfully delivered... no need to re-transmit...." << std::endl;
+                    delete packet;
+                    return;
+                }
+
+                int max_num_retrans_requests = get_max_num_retrans_requests(packet);
+
+                if (packets_waiting_at_source.find(flow_srcgpu_seqnum_tuple) == packets_waiting_at_source.end()) {
+                    std::list<Packet*> tmp_list;
+                    auto src_retransmission_timer = new cMessage("src_retransmission_timer");
+                    src_retransmission_timer->addPar("flow") = base_flowid;
+                    src_retransmission_timer->addPar("seqnum") = ethernet_header->getSeq_num();
+                    src_retransmission_timer->addPar("srcgpu") = ethernet_header->getSrc_gpu_idx();
+                    src_retransmission_timer->addPar("max_ratrans_num") = max_num_retrans_requests;
+                    packets_waiting_at_source[flow_srcgpu_seqnum_tuple] = std::make_pair(src_retransmission_timer, tmp_list);
+                }
+
+                if (hierarchical_src_recovery_wait_time <= 0)
+                    throw cRuntimeError("Invalid hierarchical_src_recovery_wait_time");
+
+                // push the packet and schedule the timer if it is not already scheduled!
+                packets_waiting_at_source[flow_srcgpu_seqnum_tuple].second.push_back(packet);
+                if (!packets_waiting_at_source[flow_srcgpu_seqnum_tuple].first->isScheduled()) {
+                    scheduleAt(simTime() + hierarchical_src_recovery_wait_time, packets_waiting_at_source[flow_srcgpu_seqnum_tuple].first);
+                }
+
+                EV << "max_num_retrans_requests: " << max_num_retrans_requests <<
+                        ", num_dropped: " << packets_waiting_at_source[flow_srcgpu_seqnum_tuple].second.size() << std::endl;
+
+                // we can re-broadcast early just when packets_waiting_at_source[flow_srcgpu_seqnum_tuple].second.size() >= max_num_retrans_requests
+                // if we re-broadcast like when it is 50% of max num, then for the same dropped packet we might re-broadcast multiple times
+                bool should_rebroadcast = (packets_waiting_at_source[flow_srcgpu_seqnum_tuple].second.size() >= max_num_retrans_requests);
+
+                // now let's see if we need to just re-broadcast early
+                if (should_rebroadcast) {
+
+                    EV << "Enough packet's are missing... re-transmit right away" << std::endl;
+
+                    // cancel and delete the timer
+                    if (packets_waiting_at_source[flow_srcgpu_seqnum_tuple].first->isScheduled())
+                        cancelEvent(packets_waiting_at_source[flow_srcgpu_seqnum_tuple].first);
+                    delete packets_waiting_at_source[flow_srcgpu_seqnum_tuple].first;
+
+                    // now re-transmit the packet
+
+                    appropriately_retransmit_packets_at_the_source(base_flowid,
+                            ethernet_header->getSrc_gpu_idx(),
+                            ethernet_header->getSeq_num(),
+                            max_num_retrans_requests);
+                }
+            } else {
+                // whether in ring-based, a custodian, or elevator, just send it to whose asking for it
+                EV << "We have the packet... re-transmitting..." << std::endl;
+
+                pushPacketToQeueue(packet);
+
+                if (transmitState == TX_IDLE_STATE) {
+                    // Since we might be in IDLE state due to PFC halt while currentTX is not nullptr, make sure
+                    // it is nullptr before popping a packet
+                    EV << "SEPEHR: Checking if queue is empty? " << txQueue->isEmpty() << endl;
+                    if (!txQueue->isEmpty() && !currentTxFrame)
+                        popTxQueue();
+                    beginSendFrames();
+                }
+            }
+        }
+
+        return;
+    }
+
+    if (ethernet_header->getIs_loss_recovery_response()) {
+
+        EV << "Response received..." << std::endl;
+
+        auto query_srcgpu_seqnum_tuple = std::make_tuple(ethernet_header->getQuery_id(),
+                ethernet_header->getSrc_gpu_idx(),
+                ethernet_header->getSeq_num());
+
+        erase_from_waitedseqs(ethernet_header->getQuery_id(),
+                ethernet_header->getSrc_gpu_idx(),
+                ethernet_header->getSeq_num(),
+                true);
+
+        fullfill_waiting_requests(ethernet_header->getQuery_id(),
+                ethernet_header->getSrc_gpu_idx(),
+                ethernet_header->getSeq_num(),
+                true,
+                ethernet_header->getHierarchical_resent_from_source());
     }
 
     if (ethernet_header->getUsing_orca() &&
@@ -2460,7 +3926,8 @@ void AugmentedEtherMacFullDuplex::processMsgFromNetwork(EthernetSignal *signal)
             pkt_dup->insertAtFront(frame);
             pkt_dup->insertAtFront(phy_header);
             pkt_dup->setFrontIteratorPosition(position);
-            txQueue->pushPacket(pkt_dup);
+            pushPacketToQeueue(pkt_dup);
+//            txQueue->pushPacket(pkt_dup);
 
             if (transmitState == TX_IDLE_STATE) {
                 // Since we might be in IDLE state due to PFC halt while currentTX is not nullptr, make sure
@@ -2481,22 +3948,52 @@ void AugmentedEtherMacFullDuplex::processMsgFromNetwork(EthernetSignal *signal)
     }
 
     if (ethernet_header->getIs_drop_notif()) {
+        // drop notif is for when you are using switch generated drop notifications
 
-        Packet* original_pkt =
-                ethernet_header->getOriginal_pkt()->dup();
-        EV << "Drop notif received!! Removing notif... Re-sending original packet: " <<
+        const Packet* tmp_original_pkt = ethernet_header->getOriginal_pkt();
+        auto original_ethernet_header = tmp_original_pkt->peekAtFront<EthernetMacHeader>();
+
+        unsigned long base_flowid;
+        if (original_ethernet_header->getCidr_base_flow_id() <= 0) {
+            base_flowid = original_ethernet_header->getFlow_id();
+        } else {
+            base_flowid = original_ethernet_header->getCidr_base_flow_id();
+        }
+        auto flowid_seqnum_tuple = std::make_tuple(base_flowid, original_ethernet_header->getSeq_num());
+        if (stored_base_packets_for_recovery.find(flowid_seqnum_tuple) == stored_base_packets_for_recovery.end()) {
+            EV << "Expected packet is already completed." << std::endl;
+            perform_deep_delete(tmp_original_pkt);
+            delete packet;
+            return;
+//
+//            std::cout << "Looking for " << base_flowid << " , " << original_ethernet_header->getSeq_num() << " in stored_base_packets_for_recovery" << std::endl;
+//            throw cRuntimeError("stored_base_packets_for_recovery.find(flowid_seqnum_tuple) == stored_base_packets_for_recovery.end()");
+        }
+        Packet* original_pkt = create_base_pkt_deep_copy(stored_base_packets_for_recovery[flowid_seqnum_tuple]);
+        // we want to re-broadcast so delete the original
+        // deep delete the original packet as it might have left out info in it
+        perform_deep_delete(tmp_original_pkt);
+        // delete the notif packet
+        delete packet;
+
+        EV << "Drop notif received!! Removing notif... Re-sending original/base packet: " <<
                 original_pkt->str() << endl;
 //        delete ethernet_header->getOriginal_pkt();
 
+        // original packet doesn't have phyheader anymore
         original_pkt->setFrontIteratorPosition(b(0));
-        original_pkt->removeAtFront<EthernetPhyHeader>();
+//        original_pkt->removeAtFront<EthernetPhyHeader>();
         auto eth_header = original_pkt->removeAtFront<EthernetMacHeader>();
+
+        // used for recovery
+        unsigned long m_flow_id = eth_header->getFlow_id();
+        unsigned long m_seq_num = eth_header->getSeq_num();
 
         if (eth_header->getCurrent_tree_idx() >= 0) {
             EV << "We need to shift the tree..." << endl;
             simtime_t recovery_time = ethernet_header->getRecovery_time();
-            if (recovery_time == 0)
-                throw cRuntimeError("Invalid recovery time from notif!");
+//            if (recovery_time == 0)
+//                throw cRuntimeError("Invalid recovery time from notif!");
             // bring tree down till recover time
             EV << "Bringing tree " << eth_header->getCurrent_tree_idx() << " down till " << recovery_time << endl;
             is_tree_idx_down(eth_header->getFlow_id(),
@@ -2507,21 +4004,155 @@ void AugmentedEtherMacFullDuplex::processMsgFromNetwork(EthernetSignal *signal)
         }
 
         eth_header->setHop_count(0);
+        eth_header->setDont_drop_again(true);
 
         original_pkt->insertAtFront(eth_header);
 
-        txQueue->pushPacket(original_pkt);
-
-        if (transmitState == TX_IDLE_STATE) {
-            EV << "SEPEHR: Checking if queue is empty? " << txQueue->isEmpty() << endl;
-            if (!txQueue->isEmpty() && !currentTxFrame)
-                popTxQueue();
-            beginSendFrames();
+        // with multicast, we might get multiple drop notifs for the same packet, so impose a timed reaction frequency
+        bool limit_reaction = false;
+        double m_wait_time = recovery_wait_time;    // for unicast based mechanism, notif recovery is in fact timer-based
+        switch (eth_header->getCollective_alg()) {
+            case BCAST_NETWORK_ASSISTED:
+            case BCAST_PARTIAL_MULTICAST:
+                limit_reaction = true;
+                EV << "using timed reaction!" << std::endl;
+                m_wait_time = 0;
+                break;
+            default:
+                if (m_wait_time <= 0)
+                    throw cRuntimeError("m_wait_time <= 0 for unicast collective!");
+                break;
         }
 
-        delete ethernet_header->getOriginal_pkt();
-        delete packet;
+        bool should_retransmit_packet = true;
+
+        if (limit_reaction) {
+            auto flowid_seqnum_tuple = std::make_tuple(m_flow_id, m_seq_num);
+
+            EV << "flow id: " << m_flow_id << ", seq num: " << m_seq_num << std::endl;
+
+            if (previously_retransmitted.find(flowid_seqnum_tuple) == previously_retransmitted.end()) {
+                previously_retransmitted.insert(flowid_seqnum_tuple);
+            } else
+                should_retransmit_packet = false;   // do not re-transmit already re-transmitted packets
+        }
+
+        if (should_retransmit_packet) {
+            // no need to wait, send right away
+            if (m_wait_time <= 0) {
+                EV << "Re-transmitting packet: " << original_pkt->str() << std::endl;
+
+                pushPacketToQeueue(original_pkt);
+    //            txQueue->pushPacket(original_pkt);
+
+                if (transmitState == TX_IDLE_STATE) {
+                    EV << "SEPEHR: Checking if queue is empty? " << txQueue->isEmpty() << endl;
+                    if (!txQueue->isEmpty() && !currentTxFrame)
+                        popTxQueue();
+                    beginSendFrames();
+                }
+            } else {
+                auto tmp_eth_header = original_pkt->peekAtFront<EthernetMacHeader>();
+                auto flowid_seqnum_tuple = std::make_tuple(tmp_eth_header->getFlow_id(),
+                        tmp_eth_header->getSeq_num());
+                if (send_later.find(flowid_seqnum_tuple) != send_later.end())
+                    throw cRuntimeError("The same packet is being re-transmitted multiple times at once!!");
+                send_later[flowid_seqnum_tuple] = original_pkt;
+
+                auto send_later_timer = new cMessage("send_later_timer");
+                send_later_timer->addPar("flow") = tmp_eth_header->getFlow_id();
+                send_later_timer->addPar("seqnum") = tmp_eth_header->getSeq_num();
+                scheduleAt(simTime() + m_wait_time, send_later_timer);
+
+            }
+        } else {
+            // do a deep delete
+            perform_deep_delete(original_pkt);
+        }
+
         return;
+    }
+
+    // packet is healthy and should move up
+    if (recovery_type == HIERARCHICAL && pkt_name == "data") {
+
+        // send recovery request for packets that are waiting
+        // update max seq num
+
+        auto query_srcgpu_tuple = std::make_tuple(ethernet_header->getQuery_id(),
+                ethernet_header->getSrc_gpu_idx());
+        if (hierarchical_max_seqnum.find(query_srcgpu_tuple) == hierarchical_max_seqnum.end())
+            hierarchical_max_seqnum[query_srcgpu_tuple] = 0;
+        hierarchical_max_seqnum[query_srcgpu_tuple] =
+                std::max(hierarchical_max_seqnum[query_srcgpu_tuple],
+                        ethernet_header->getSeq_num());
+
+
+        auto query_found_it = query_srcgpu_to_lostseqs.find(query_srcgpu_tuple);
+        if (query_found_it != query_srcgpu_to_lostseqs.end()) {
+
+            long hierarchical_pkt_num_gap_threshold = get_hierarchical_pkt_num_gap_threshold();
+            if (hierarchical_pkt_num_gap_threshold <= 1)
+                throw cRuntimeError("hierarchical_seq_num_gap_threshold must be > 1");
+
+            while (query_found_it->second.size() != 0) {
+                // lost seqs are sorted
+                auto lowest_seq = (*query_found_it->second.begin());
+                EV << "lowest seq: " << lowest_seq << ", max seq: " <<
+                        hierarchical_max_seqnum[query_srcgpu_tuple] << std::endl;
+                if (hierarchical_max_seqnum[query_srcgpu_tuple] -
+                        lowest_seq >= hierarchical_pkt_num_gap_threshold) {
+                    EV << "Sending request for seq num " << lowest_seq << std::endl;
+                    create_and_send_recovery_request(ethernet_header->getQuery_id(),
+                            ethernet_header->getSrc_gpu_idx(),
+                            lowest_seq);
+                    query_found_it->second.erase(lowest_seq);
+                } else {
+                    EV << "Other seqs do not meet the gap condition... for them, keep waiting..." << std::endl;
+                    break;
+                }
+            }
+
+            if (query_found_it->second.size() == 0)
+                query_srcgpu_to_lostseqs.erase(query_srcgpu_tuple);
+        }
+
+    }
+
+    bool last_packet_arrived = false;
+    if ((recovery_type == RING_BASED || recovery_type == HIERARCHICAL) && pkt_name == "data")
+        last_packet_arrived = ethernet_header->getIs_last_pkt();
+
+    if (recovery_type == HIERARCHICAL ||
+            recovery_type == DROP_NOTIF) {
+        unsigned long base_flowid;
+        if (ethernet_header->getCidr_base_flow_id() <= 0) {
+            base_flowid = ethernet_header->getFlow_id();
+        } else {
+            base_flowid = ethernet_header->getCidr_base_flow_id();
+        }
+        std::list<unsigned long> involved_servers_list;
+        for (int k = 0; k < ethernet_header->getInvolved_servers_listArraySize(); k++) {
+            involved_servers_list.push_back(ethernet_header->getInvolved_servers_list(k));
+        }
+        // find the node before you in the ring
+        int src_server_idx;
+        if (involved_servers_list.size() == 0) {
+            if (ethernet_header->getCollective_alg() == BCAST_PARTIAL_MULTICAST)
+                throw cRuntimeError("for peel, We need more than 0 involved servers here");
+
+            // for other collectives just contact the source
+            src_server_idx = ethernet_header->getSource_server_idx();
+            if (src_server_idx < 0)
+                throw cRuntimeError("Invalid src_server_idx");
+
+        } else {
+            auto involved_server_itr = involved_servers_list.begin();
+            src_server_idx = (*involved_server_itr);
+        }
+        // with our implementation, every server gets each packet only once
+        notify_src_of_completed(base_flowid, ethernet_header->getSrc_gpu_idx(),
+                ethernet_header->getSeq_num(), src_server_idx);
     }
 
 
@@ -2623,7 +4254,8 @@ void AugmentedEtherMacFullDuplex::processMsgFromNetwork(EthernetSignal *signal)
             EV << "Got data pkt... sending ACK" << endl;
             auto ack_pkt = packet->dup();
             create_ack_header(ack_pkt);
-            txQueue->pushPacket(ack_pkt);
+            pushPacketToQeueue(ack_pkt);
+//            txQueue->pushPacket(ack_pkt);
             // in case queue was previously empty
             if (!txQueue->isEmpty() && !currentTxFrame)
                 popTxQueue();
@@ -2690,6 +4322,10 @@ void AugmentedEtherMacFullDuplex::processMsgFromNetwork(EthernetSignal *signal)
         // todo: impelemnt potential receiver feedbacks for ina
     }
 
+    unsigned long query_id = frame->getQuery_id();
+    unsigned long seqnum = frame->getSeq_num();
+    int src_gpu_idx = frame->getSrc_gpu_idx();
+
     if (frame->getTypeOrLength() == ETHERTYPE_FLOW_CONTROL) {
         const auto& controlFrame = currentTxFrame->peekDataAt<EthernetControlFrame>(frame->getChunkLength(), b(-1));
         if (controlFrame->getOpCode() == ETHERNET_CONTROL_PAUSE) {
@@ -2708,6 +4344,10 @@ void AugmentedEtherMacFullDuplex::processMsgFromNetwork(EthernetSignal *signal)
     else {
         EV_INFO << "Reception of " << frame << " successfully completed." << endl;
         processReceivedDataFrame(packet, frame);
+    }
+
+    if (last_packet_arrived) {
+        last_pkt_arrived(query_id, src_gpu_idx, true);
     }
 }
 
@@ -2888,6 +4528,7 @@ bool AugmentedEtherMacFullDuplex::is_allowed_to_send_by_PFC() {
 
 void AugmentedEtherMacFullDuplex::beginSendFrames()
 {
+
     EV << "AugmentedEtherMacFullDuplex::beginSendFrames" << endl;
     if (currentTxFrame && is_allowed_to_send_by_PFC()) {
         // Other frames are queued, transmit next frame

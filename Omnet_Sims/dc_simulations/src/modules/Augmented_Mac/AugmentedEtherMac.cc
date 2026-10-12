@@ -1025,6 +1025,10 @@ void AugmentedEtherMac::generate_base_signal_packet(Packet *packet_dup) {
     eth_header->setRsbf_redundant_send(false);
     eth_header->setDst_tor_idx(-1);
     eth_header->setIs_drop_notif(false);
+    eth_header->setIs_last_pkt(false);
+    eth_header->setIs_pkt_dropped(false);
+    eth_header->setIs_loss_recovery_request(false);
+    eth_header->setIs_loss_recovery_response(false);
     base_signal_packet->insertAtBack(eth_header);
 //    base_signal_packet->setFrontIteratorPosition(position);
     base_signal_packet->setFrontIteratorPosition(b(0));
@@ -1078,6 +1082,7 @@ void AugmentedEtherMac::processReceivedDataFrame(Packet *packet)
 
     // handle receiving pfc signal
     auto eth_header = packet->peekAtFront<EthernetMacHeader>();
+
     int pfc_signal = eth_header->getPfc_signal();
     std::string packet_name = packet->getName();
     if (pfc_signal != -1) {

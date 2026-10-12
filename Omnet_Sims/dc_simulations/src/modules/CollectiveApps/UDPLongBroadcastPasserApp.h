@@ -52,7 +52,7 @@ class INET_API UDPLongBroadcastPasserApp : public ApplicationBase, public UdpSoc
 
   protected:
 
-    enum CollectiveAlgTypes { BCAST_SINGLE_SENDER = 1, BCAST_BINOMIAL_TREE, BCAST_BINARY_TREE, BCAST_RING, BCAST_NETWORK_ASSISTED, BCAST_INA, BCAST_OPTIREDUCE, BCAST_PARTIAL_MULTICAST, BCAST_MULTIWRITE};
+    enum CollectiveAlgTypes { BCAST_SINGLE_SENDER = 1, BCAST_BINOMIAL_TREE, BCAST_BINARY_TREE, BCAST_RING, BCAST_NETWORK_ASSISTED, BCAST_INA, BCAST_OPTIREDUCE, BCAST_PARTIAL_MULTICAST};
     enum CollectiveTypes { ALL_TO_ALL_V = 1, ALL_REDUCE, REDUCE, ALL_GATHER, BROADCAST, REDUCE_SCATTER};
     enum MsgKinds { PASS = 1, FINISH};
     enum BatchingStatus { BATCH_SEND = 1, BATCH_SLEEP, BATCH_TERMINATE };
@@ -88,10 +88,6 @@ class INET_API UDPLongBroadcastPasserApp : public ApplicationBase, public UdpSoc
     int nvlink_speed_gbps = -1;
     bool mcast_in_host;
     int num_gpus;
-    int num_servers_under_each_leaf = -1;
-    int fattree_k = -1;
-    int num_spines = -1;
-    int num_leafs = -1;
     // we put things here till the time they are popped
     std::unordered_map<unsigned long, BCastCustomCollectiveMsgPasserInfo*> storage;
     unsigned long storage_id = 1;
@@ -171,8 +167,6 @@ class INET_API UDPLongBroadcastPasserApp : public ApplicationBase, public UdpSoc
     virtual void pass_bcast_binary_tree(BCastCustomCollectiveMsgPasserInfo* record_msg_info);
     int get_num_children(BCastCustomCollectiveMsgPasserInfo* record_msg_info);
     virtual void pass_bcast_ring(BCastCustomCollectiveMsgPasserInfo* record_msg_info);
-    virtual void pass_bcast_multiwrite(Packet* pkt, GenericAppMsg* payload);    // when node is relay
-    virtual void pass_bcast_multiwrite(BCastCustomCollectiveMsgPasserInfo* record_msg_info); // when node is a dst
     virtual void pass_bcast_optireduce(BCastCustomCollectiveMsgPasserInfo* record_msg_info);
     virtual void optireduce_send_next(unsigned long query_id, int src_gpu_idx);
 

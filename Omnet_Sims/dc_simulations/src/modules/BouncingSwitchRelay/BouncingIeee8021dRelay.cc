@@ -88,6 +88,12 @@ BouncingIeee8021dRelay::~BouncingIeee8021dRelay()
         query_seqnum_to_port_pkt_itr.second.clear();
     }
     query_seqnum_to_port_pkt_map.clear();
+
+//    if (macTableComplement != nullptr) {
+//        // TODO: THIS REMAINING UNDISPOSED IS OK SINCE IT'S JUST ONCE PER BOUNCING RELAY... SO NO WORRIES :)
+////        macTableComplement->clearTable();
+////        delete macTableComplement;
+//    }
 }
 
 static int callback_incremental_deployment(void *data, int argc, char **argv, char **azColName){
@@ -480,8 +486,15 @@ void BouncingIeee8021dRelay::initialize(int stage)
         use_cepheus = bool(getAncestorPar("use_cepheus"));
 
         random_fail_prob = double(getAncestorPar("random_fail_prob"));
+        random_drop_normal_prob_tor = double(getAncestorPar("random_drop_normal_prob_tor"));
+        random_drop_normal_prob_agg = double(getAncestorPar("random_drop_normal_prob_agg"));
+        random_drop_normal_prob_core = double(getAncestorPar("random_drop_normal_prob_core"));
+
+
+        std::string drop_type_str = getAncestorPar("drop_type");
+        std::string recovery_type_str = getAncestorPar("recovery_type");
         if (random_fail_prob > 0) {
-            std::string drop_type_str = getAncestorPar("drop_type");
+            macTableComplement = new LSMacAddressTable();
             if (drop_type_str.compare("fail") == 0) {
                 drop_type = DROP_FAIL;
                 failure_period_mean = double(getAncestorPar("failure_period_mean"));
@@ -492,11 +505,36 @@ void BouncingIeee8021dRelay::initialize(int stage)
             } else
                 throw cRuntimeError("Unknown drop type!");
 
-            std::string recovery_type_str = getAncestorPar("recovery_type");
             if (recovery_type_str.compare("notif") == 0) {
                 recovery_type = DROP_NOTIF;
-            } else if (recovery_type_str.compare("deflect") == 0) {
-                recovery_type = DEFLECT_ON_DROP;
+            }
+//            else if (recovery_type_str.compare("deflect") == 0) {
+//                recovery_type = DEFLECT_ON_DROP;
+//            }
+            else if (recovery_type_str.compare("ring_based") == 0) {
+                recovery_type = RING_BASED;
+            } else if (recovery_type_str.compare("hierarchical") == 0) {
+                recovery_type = HIERARCHICAL;
+            } else
+                throw cRuntimeError("Unknown drop recovery type!");
+        } else if (random_drop_normal_prob_tor > 0 ||
+                random_drop_normal_prob_agg > 0 ||
+                random_drop_normal_prob_core > 0) {
+            if (drop_type_str.compare("random_normal") == 0) {
+                drop_type = DROP_RANDOM_NORMAL;
+            } else
+                throw cRuntimeError("Unknown drop type!");
+
+            if (recovery_type_str.compare("notif") == 0) {
+                recovery_type = DROP_NOTIF;
+            }
+//            else if (recovery_type_str.compare("deflect") == 0) {
+//                recovery_type = DEFLECT_ON_DROP;
+//            }
+            else if (recovery_type_str.compare("ring_based") == 0) {
+                recovery_type = RING_BASED;
+            } else if (recovery_type_str.compare("hierarchical") == 0) {
+                recovery_type = HIERARCHICAL;
             } else
                 throw cRuntimeError("Unknown drop recovery type!");
         }
@@ -721,6 +759,10 @@ void BouncingIeee8021dRelay::handleLowerPacket(Packet *packet)
 
     bool dispatch_drop_notif = false;
     if (pkt_name.compare("drop_notif") == 0) {
+
+        if (recovery_type != DROP_NOTIF)
+            throw cRuntimeError("Recovery type must be drop_notif here!!");
+
         EV << "Handling drop notif..." << endl;
         auto eth_header = packet->peekAtFront<EthernetMacHeader>();
 
@@ -733,14 +775,14 @@ void BouncingIeee8021dRelay::handleLowerPacket(Packet *packet)
                 break;
             }
 
-        if (more_ports_available && recovery_type == DEFLECT_ON_DROP) {
-            EV << "Reverting the packet back to its original form with name " <<
-                    eth_header->getOriginal_pkt_name() << endl;
-            packet->setName(eth_header->getOriginal_pkt_name());
-        } else {
+//        if (more_ports_available && recovery_type == DEFLECT_ON_DROP) {
+//            EV << "Reverting the packet back to its original form with name " <<
+//                    eth_header->getOriginal_pkt_name() << endl;
+//            packet->setName(eth_header->getOriginal_pkt_name());
+//        } else {
             EV << "Propagate drop notif..." << endl;
             dispatch_drop_notif = true;
-        }
+//        }
     }
 
     if (dispatch_drop_notif) {
@@ -1196,6 +1238,9 @@ void BouncingIeee8021dRelay::fail_or_recover_message_received(Packet* pkt, int p
 
     auto eth_header = pkt->peekAtFront<EthernetMacHeader>();
 
+    if (macTableComplement == nullptr)
+        throw cRuntimeError("macTableComplement should not be nullptr here!");
+
     int affected_port_interface_id = ifTable->getInterface(port_idx)->getInterfaceId();
     bool should_notif_neighbors = false;
     std::set<MacAddress> unreachable_mac_addresses;
@@ -1209,6 +1254,8 @@ void BouncingIeee8021dRelay::fail_or_recover_message_received(Packet* pkt, int p
             case NOTIF_LINK_FAILURE:
                 // we should notif if we have no routes after deleting the failed links
                 macTable->removeInterfaceForAddress(affected_address, affected_port_interface_id);
+                EV << "Inserting into macTableComplement" << std::endl;
+                macTableComplement->ensureInterfaceForAddress(affected_address, affected_port_interface_id);
                 EV << affected_address.str() << " is not longer reachable via port " << port_idx << endl;
                 interfaceIds = macTable->getInterfaceIdForAddress(affected_address);
                 if (interfaceIds.size() == 0)
@@ -1220,6 +1267,8 @@ void BouncingIeee8021dRelay::fail_or_recover_message_received(Packet* pkt, int p
                 if (interfaceIds.size() == 0)
                     unreachable_mac_addresses.insert(affected_address);
                 macTable->ensureInterfaceForAddress(affected_address, affected_port_interface_id);
+                EV << "Removing from macTableComplement" << std::endl;
+                macTableComplement->removeInterfaceForAddress(affected_address, affected_port_interface_id);
                 EV << affected_address.str() << " is now reachable via port " << port_idx << endl;
                 break;
             default:
@@ -1315,6 +1364,9 @@ void BouncingIeee8021dRelay::notif_link_failure_or_recovery_to_neighbors(int por
     if (port_itr == port_to_mac_address_map.end())
         throw cRuntimeError("Why is port not found!");
 
+    if (macTableComplement == nullptr)
+        throw cRuntimeError("macTableComplement should not be nullptr here!");
+
 //    int route_num = -1;
     int affected_port_interface_id = ifTable->getInterface(port_idx)->getInterfaceId();
     bool should_notif_neighbors = false;
@@ -1326,6 +1378,8 @@ void BouncingIeee8021dRelay::notif_link_failure_or_recovery_to_neighbors(int por
             case NOTIF_LINK_FAILURE:
                 // we should notif if we have no routes after deleting the failed links
                 macTable->removeInterfaceForAddress(affected_address, affected_port_interface_id);
+                EV << "2) Inserting into macTableComplement" << std::endl;
+                macTableComplement->ensureInterfaceForAddress(affected_address, affected_port_interface_id);
 //                EV << affected_address.str() << " is no longer reachable via port " << port_idx << endl;
                 interfaceIds = macTable->getInterfaceIdForAddress(affected_address);
                 if (interfaceIds.size() == 0)
@@ -1337,6 +1391,8 @@ void BouncingIeee8021dRelay::notif_link_failure_or_recovery_to_neighbors(int por
                 if (interfaceIds.size() == 0)
                     unreachable_mac_addresses.insert(affected_address);
                 macTable->ensureInterfaceForAddress(affected_address, affected_port_interface_id);
+                EV << "2) Removing from macTableComplement" << std::endl;
+                macTableComplement->removeInterfaceForAddress(affected_address, affected_port_interface_id);
                 EV << affected_address.str() << " is now reachable via port " << port_idx << endl;
                 break;
             default:
@@ -2324,8 +2380,6 @@ void BouncingIeee8021dRelay::forward_packet_based_on_host_instructions(Packet *p
 //        std::cout << start_from_idx << endl;
 //        std::cout << output_port_array.getInnerArrayArraySize() << endl;
 
-        bool drop_notif_already_sent = false;
-
         if (output_port_array.getInnerArrayArraySize() > 0) {
             std::set<unsigned long> fw_port_idx_set;
             long candidate_start_from_idx = -1;
@@ -2385,20 +2439,8 @@ void BouncingIeee8021dRelay::forward_packet_based_on_host_instructions(Packet *p
 
                 InterfaceEntry *ie = ifTable->getInterface(out_port_idx);
 
-                bool dropped_due_to_failure = false;
-                // for every packet, just send drop notif once!
-                // however, still check if we can send the packet on other links
-                if (drop_type == DROP_FAIL &&
-                            !ethHeader->getIs_redundant_cidr_pkt())
-                    dropped_due_to_failure = failure_check_and_reroute(packet_to_send,
-                            ie,
-                            drop_notif_already_sent);
-
-                if (dropped_due_to_failure)
-                    drop_notif_already_sent = true;
-
-                if (dropped_due_to_failure)
-                    continue;
+                if (ie == nullptr)
+                    throw cRuntimeError("ie should never be nullptr even under failure with host instructions!");
 
                 dispatch(packet_to_send, ie);
             }
@@ -2421,9 +2463,12 @@ void BouncingIeee8021dRelay::schedule_recovery(simtime_t recovery_time, int port
     scheduleAt(recovery_time, timeoutMsg);
 }
 
-bool BouncingIeee8021dRelay::is_link_failed(int port_idx, Packet *packet) {
+bool BouncingIeee8021dRelay::is_link_failed(int port_idx) {
     EV << "BouncingIeee8021dRelay::is_link_failed called for " <<
             port_idx << endl;
+
+    if (drop_type != DROP_FAIL)
+        return false;
 
     // find the neighbor's relay unit and correct port to fail or recover if needed
     auto neighbor_path_itr = port_idx_to_neighboring_switch_path.find(port_idx);
@@ -2579,6 +2624,10 @@ void BouncingIeee8021dRelay::create_notif_header(Packet *packet, std::string not
     eth_header->setOrca_pkt_seen_agent(false);
     eth_header->setRsbf_redundant_send(false);
     eth_header->setDst_tor_idx(-1);
+    eth_header->setIs_last_pkt(false);
+    eth_header->setIs_pkt_dropped(false);
+    eth_header->setIs_loss_recovery_request(false);
+    eth_header->setIs_loss_recovery_response(false);
     packet->insertAtFront(eth_header);
 
     packet->insertAtFront(phy_header);
@@ -2589,17 +2638,83 @@ void BouncingIeee8021dRelay::create_notif_header(Packet *packet, std::string not
         throw cRuntimeError("packet->getBitLength() < B(64)");
 }
 
+void BouncingIeee8021dRelay::create_dropped_version_of_pkt(Packet *packet) {
+
+//    return;
+
+    EV << "create_dropped_version_of_pkt" << endl;
+
+    // reset ttl and hopcount for original packet
+    // the original is already carrying the base_packet if required so we don't need to add it to the dropped version of the packet
+    auto original_pkt = packet->dup();
+
+    // no need to change the name
+    b packetPosition = packet->getFrontOffset();
+    packet->setFrontIteratorPosition(b(0));
+    auto phy_header = packet->removeAtFront<EthernetPhyHeader>();
+    auto eth_header = packet->removeAtFront<EthernetMacHeader>();
+    auto ip_header = packet->removeAtFront<Ipv4Header>();
+    auto udp_header = packet->removeAtFront<UdpHeader>();
+    auto chunk = packet->removeAtFront<GenericAppMsg>();
+    auto fcs_header = packet->peekAtBack<EthernetFcs>(ETHER_FCS_BYTES);
+
+    if (eth_header->getCollective_alg() != BCAST_PARTIAL_MULTICAST)
+        throw cRuntimeError("For now, we assumed that random drop is only implemented for PEEL!");
+
+    b fake_payload_length = B(64);
+//    fake_payload_length -= phy_header->getChunkLength();
+    fake_payload_length -= eth_header->getChunkLength();
+    fake_payload_length -= ip_header->getChunkLength();
+    fake_payload_length -= udp_header->getChunkLength();
+    fake_payload_length -= fcs_header->getChunkLength();
+
+    chunk->setChunkLength(fake_payload_length);
+    packet->insertAtFront(chunk);
+
+    // setIs_pkt_dropped
+    packet->insertAtFront(udp_header);
+    packet->insertAtFront(ip_header);
+    eth_header->setIs_pkt_dropped(true);
+    eth_header->setIs_loss_recovery_request(false);
+    eth_header->setIs_loss_recovery_response(false);
+    eth_header->setIs_drop_notif(false);    // drop notif is different that packet is dropped!
+    eth_header->setOriginal_pkt(original_pkt);
+    packet->insertAtFront(eth_header);
+    packet->insertAtFront(phy_header);
+
+    packet->setFrontIteratorPosition(packetPosition);
+
+    // when we make a copy, input port tag should be correct still!
+    if (packet->getTag<InputPortTag>()->getInput_port_idx() !=
+            original_pkt->getTag<InputPortTag>()->getInput_port_idx()) {
+        std::cout << packet->getTag<InputPortTag>()->getInput_port_idx() << std::endl;
+        std::cout << original_pkt->getTag<InputPortTag>()->getInput_port_idx() << std::endl;
+        throw cRuntimeError("packet->getTag<InputPortTag>()->getInput_port_idx() != \
+            original_pkt->getTag<InputPortTag>()->getInput_port_idx()");
+    }
+
+    if (packet->getByteLength() < 64)
+        throw cRuntimeError("packet->getBitLength() < B(64)");
+
+
+
+}
+
 void BouncingIeee8021dRelay::send_drop_notif(Packet *packet, simtime_t recovery_time) {
     EV << "Sending drop notif" << endl;
 
     // reset ttl and hopcount for original packet
-    auto original_pkt = packet->dup();
-    b originalPacketPosition = original_pkt->getFrontOffset();
+    // original packet is already carrying the base packet so no need to add it to drop notif
+    Packet* original_pkt = packet->dup();
     original_pkt->setFrontIteratorPosition(b(0));
-    auto original_phy_header =
-            original_pkt->removeAtFront<EthernetPhyHeader>();
+    original_pkt->removeAtFront<EthernetPhyHeader>();
+
     auto original_eth_header =
             original_pkt->removeAtFront<EthernetMacHeader>();
+
+    while (original_eth_header->getInput_ports_passedArraySize() > 0)
+        original_eth_header->eraseInput_ports_passed(0);
+
     auto original_ip_header =
             original_pkt->removeAtFront<Ipv4Header>();
     original_eth_header->setHop_count(0);
@@ -2607,8 +2722,8 @@ void BouncingIeee8021dRelay::send_drop_notif(Packet *packet, simtime_t recovery_
     original_eth_header->setOriginal_pkt_name(packet->getName());
     original_pkt->insertAtFront(original_ip_header);
     original_pkt->insertAtFront(original_eth_header);
-    original_pkt->insertAtFront(original_phy_header);
-    original_pkt->setFrontIteratorPosition(originalPacketPosition);
+//    original_pkt->insertAtFront(original_phy_header);
+//    original_pkt->setFrontIteratorPosition(originalPacketPosition);
 
     create_notif_header(packet, "drop_notif");
 
@@ -2622,30 +2737,51 @@ void BouncingIeee8021dRelay::send_drop_notif(Packet *packet, simtime_t recovery_
     packet->insertAtFront(eth_header);
     packet->insertAtFront(phy_header);
     packet->setFrontIteratorPosition(packetPosition);
-}
 
-void BouncingIeee8021dRelay::deflect_on_drop(Packet *packet) {
-    EV << "Sending deflect_on_drop" << endl;
 
-    // reset ttl and hopcount for original packet
-    b originalPacketPosition = packet->getFrontOffset();
+    EV << "Notif pkt is: " << packet->str() << endl;
+    b pkt_porition = packet->getFrontOffset();
     packet->setFrontIteratorPosition(b(0));
-    auto original_phy_header =
+    auto m_phy_header =
             packet->removeAtFront<EthernetPhyHeader>();
-    auto original_eth_header =
+    auto m_eth_header =
             packet->removeAtFront<EthernetMacHeader>();
-    auto original_ip_header =
-            packet->removeAtFront<Ipv4Header>();
-//    original_eth_header->setHop_count(0);
-    original_ip_header->setTimeToLive(250);
-    original_eth_header->setOriginal_pkt_name(packet->getName());
-    packet->insertAtFront(original_ip_header);
-    packet->insertAtFront(original_eth_header);
-    packet->insertAtFront(original_phy_header);
-    packet->setFrontIteratorPosition(originalPacketPosition);
-
-    packet->setName("drop_notif");
+    if (m_eth_header->getInput_ports_passedArraySize() == 0)
+        throw cRuntimeError("5) How is getInput_ports_passedArraySize() == 0");
+    unsigned int output_port = m_eth_header->getInput_ports_passed(
+            m_eth_header->getInput_ports_passedArraySize() - 1);
+    m_eth_header->eraseInput_ports_passed(
+            m_eth_header->getInput_ports_passedArraySize() - 1);
+    packet->insertAtFront(m_eth_header);
+    packet->insertAtFront(m_phy_header);
+    packet->setFrontIteratorPosition(pkt_porition);
+    EV << "Notif packet is being sent to port " << output_port << endl;
+    ie = ifTable->getInterface(output_port);
+    dispatch(packet, ie);
 }
+
+//void BouncingIeee8021dRelay::deflect_on_drop(Packet *packet) {
+//    EV << "Sending deflect_on_drop" << endl;
+//
+//    // reset ttl and hopcount for original packet
+//    b originalPacketPosition = packet->getFrontOffset();
+//    packet->setFrontIteratorPosition(b(0));
+//    auto original_phy_header =
+//            packet->removeAtFront<EthernetPhyHeader>();
+//    auto original_eth_header =
+//            packet->removeAtFront<EthernetMacHeader>();
+//    auto original_ip_header =
+//            packet->removeAtFront<Ipv4Header>();
+////    original_eth_header->setHop_count(0);
+//    original_ip_header->setTimeToLive(250);
+//    original_eth_header->setOriginal_pkt_name(packet->getName());
+//    packet->insertAtFront(original_ip_header);
+//    packet->insertAtFront(original_eth_header);
+//    packet->insertAtFront(original_phy_header);
+//    packet->setFrontIteratorPosition(originalPacketPosition);
+//
+//    packet->setName("drop_notif");
+//}
 
 int BouncingIeee8021dRelay::get_pod_idx_for_tor(int tor_idx) {
     if (use_fattree) {
@@ -2745,8 +2881,28 @@ bool BouncingIeee8021dRelay::isSwitchAggregate() {
 
 void BouncingIeee8021dRelay::multicast_downstream(Packet *packet, int input_port_idx) {
     EV << "BouncingIeee8021dRelay::multicast_downstream. Input port: " << input_port_idx << endl;
+    EV << "Packet is: " << packet->str() << std::endl;
+
+    b packetPosition = packet->getFrontOffset();
+    packet->setFrontIteratorPosition(b(0));
+    auto phy_header = packet->removeAtFront<EthernetPhyHeader>();
+
+    // add the base flow id
+    auto eth_header3 = packet->removeAtFront<EthernetMacHeader>();
+    if (eth_header3->getCidr_base_flow_id() <= 0) {
+        EV << "We have not stored the base info yet... storing it..." << endl;
+        eth_header3->setCidr_base_flow_id(eth_header3->getFlow_id());
+        eth_header3->setCidr_base_src_gpu_idx(eth_header3->getSrc_gpu_idx());
+    }
+    packet->insertAtFront(eth_header3);
+
+    packet->insertAtFront(phy_header);
+    packet->setFrontIteratorPosition(packetPosition);   // reset packet to how it was...
 
     auto ethHeader = packet->peekAtFront<EthernetMacHeader>();
+
+    bool pkt_is_dropped = ethHeader->getIs_pkt_dropped();
+
     std::set<unsigned int> dst_server_idx_set;
 
 //    std::cout << ethHeader->getDst_idx_listArraySize() << endl;
@@ -2805,12 +2961,27 @@ void BouncingIeee8021dRelay::multicast_downstream(Packet *packet, int input_port
 //                    "---" << server_idx_itr->second.size() << endl;
 
         auto packet_to_send = packet->dup();
+
+        // check if packet was dropped to switch to the dropped version of the packet
+        if (pkt_is_dropped) {
+            create_dropped_version_of_pkt(packet_to_send);
+        }
+
         InterfaceEntry *ie = ifTable->getInterface(*port_num_it);
+
+        if (ie == nullptr)
+            throw cRuntimeError("ie should never be nullptr even under failure with multicast downstream!");
+
         dispatch(packet_to_send, ie);
     }
 
-    if (!dst_server_found)
+    if (!dst_server_found) {
+        std::cout << packet->str() << std::endl;
+        std::cout << ethHeader->getIs_pkt_dropped() << std::endl;
+        std::cout << ethHeader->getIs_loss_recovery_request() << std::endl;
+        std::cout << ethHeader->getIs_loss_recovery_response() << std::endl;
         throw cRuntimeError("No dst server found for this ToR! How so?");
+    }
 }
 
 void BouncingIeee8021dRelay::mcast_programmable_core(Packet *packet) {
@@ -2820,7 +2991,7 @@ void BouncingIeee8021dRelay::mcast_programmable_core(Packet *packet) {
     auto phy_header = packet->removeAtFront<EthernetPhyHeader>();
     auto eth_header = packet->removeAtFront<EthernetMacHeader>();
 
-    if (eth_header->getCidr_base_flow_id() < 0) {
+    if (eth_header->getCidr_base_flow_id() <= 0) {
         EV << "We have not stored the base info yet... storing it..." << endl;
         eth_header->setCidr_base_flow_id(eth_header->getFlow_id());
         eth_header->setCidr_base_src_gpu_idx(eth_header->getSrc_gpu_idx());
@@ -2883,14 +3054,6 @@ void BouncingIeee8021dRelay::mcast_programmable_core(Packet *packet) {
         if (destInterfaceIds.size() > 0)
             ie = ifTable->getInterfaceById(*destInterfaceIds.begin());
 
-        bool dropped_due_to_failure = false;
-        if (drop_type == DROP_FAIL &&
-                    !frame->getIs_redundant_cidr_pkt())
-            dropped_due_to_failure = failure_check_and_reroute(packet_to_send, ie);
-
-        if (dropped_due_to_failure)
-            continue;
-
         if (ie == nullptr)
             throw cRuntimeError("ie shouldn't be nullptr at this point!");
 
@@ -2899,6 +3062,30 @@ void BouncingIeee8021dRelay::mcast_programmable_core(Packet *packet) {
     }
     packet->insertAtFront(eth_header);
     packet->insertAtFront(phy_header);
+}
+
+bool BouncingIeee8021dRelay::should_drop_random(double drop_prob) {
+
+    // Drop with probability p
+    return uniform(0, 1) < drop_prob;
+
+}
+
+bool BouncingIeee8021dRelay::should_drop_random() {
+
+    if (drop_type != DROP_RANDOM_NORMAL)
+        return false;
+
+    if (isSwitchToR()) {
+        return should_drop_random(random_drop_normal_prob_tor);
+    } else if (isSwitchAggregate()) {
+        return should_drop_random(random_drop_normal_prob_agg);
+    } else if (isSwitchCore()) {
+        return should_drop_random(random_drop_normal_prob_core);
+    }
+
+    throw cRuntimeError("should_drop_random Unknow switch...");
+
 }
 
 bool BouncingIeee8021dRelay::is_port_covered_by_cidr(
@@ -2942,12 +3129,14 @@ void BouncingIeee8021dRelay::mcast_cidr_core(Packet *packet) {
     auto phy_header = packet->removeAtFront<EthernetPhyHeader>();
     auto eth_header = packet->removeAtFront<EthernetMacHeader>();
 
+    bool pkt_is_dropped = eth_header->getIs_pkt_dropped();
+
     std::string cidr_group_id = eth_header->getCore_cidr_group_id();
     if (cidr_group_id.compare("") == 0 ||
             eth_header->getCore_cidr_group_member_count() == 0)
         throw cRuntimeError("No CIDR Core info appended to the packet!");
 
-    if (eth_header->getCidr_base_flow_id() < 0) {
+    if (eth_header->getCidr_base_flow_id() <= 0) {
         EV << "We have not stored the base info yet... storing it..." << endl;
         eth_header->setCidr_base_flow_id(eth_header->getFlow_id());
         eth_header->setCidr_base_src_gpu_idx(eth_header->getSrc_gpu_idx());
@@ -2956,7 +3145,9 @@ void BouncingIeee8021dRelay::mcast_cidr_core(Packet *packet) {
     unsigned int cidr_base_src_gpu_idx = eth_header->getCidr_base_src_gpu_idx();
     if (cidr_base_flow_id < 0 || cidr_base_src_gpu_idx < 0)
         throw cRuntimeError("Invalid cidr_base_flow_id or cidr_base_src_gpu_idx");
+    packet->insertAtFront(eth_header);
 
+    eth_header = packet->removeAtFront<EthernetMacHeader>();
     int input_port_idx = packet->getTag<InputPortTag>()->getInput_port_idx();
 
     std::set<unsigned int> correct_cidr_ports;
@@ -2973,6 +3164,8 @@ void BouncingIeee8021dRelay::mcast_cidr_core(Packet *packet) {
         auto m_phy_header = packet_to_send->removeAtFront<EthernetPhyHeader>();
         auto m_eth_header = packet_to_send->removeAtFront<EthernetMacHeader>();
         m_eth_header->setHop_count(eth_header->getHop_count());
+
+        m_eth_header->setDont_drop_again(eth_header->getDont_drop_again());
 
         m_eth_header->setCidr_base_flow_id(cidr_base_flow_id);
         m_eth_header->setCidr_base_src_gpu_idx(cidr_base_src_gpu_idx);
@@ -2998,6 +3191,11 @@ void BouncingIeee8021dRelay::mcast_cidr_core(Packet *packet) {
             m_eth_header->insertInput_ports_passed(eth_header->getInput_ports_passed(input_port_idx));
         }
 
+        // preserve loss recovery request/response of the original packet
+        m_eth_header->setIs_loss_recovery_request(eth_header->getIs_loss_recovery_request());
+        m_eth_header->setIs_loss_recovery_response(eth_header->getIs_loss_recovery_response());
+        m_eth_header->setHierarchical_resent_from_source(eth_header->getHierarchical_resent_from_source());
+
         packet_to_send->insertAtFront(m_eth_header);
         packet_to_send->insertAtFront(m_phy_header);
         packet_to_send->setFrontIteratorPosition(packetPosition);
@@ -3012,16 +3210,23 @@ void BouncingIeee8021dRelay::mcast_cidr_core(Packet *packet) {
         if (destInterfaceIds.size() > 0)
             ie = ifTable->getInterfaceById(*destInterfaceIds.begin());
 
-        bool dropped_due_to_failure = false;
-        if (drop_type == DROP_FAIL &&
-                    !frame->getIs_redundant_cidr_pkt())
-            dropped_due_to_failure = failure_check_and_reroute(packet_to_send, ie);
+        if (random_fail_prob > 0 && ie == nullptr) {
+            EV << "2) all output ports for this packet are failed... use a backup which would result in the packet being dropped anyway" << std::endl;
+            // use what is removed
+            if (macTableComplement == nullptr)
+                throw cRuntimeError("macTableComplement should not be nullptr here!");
+            destInterfaceIds = macTableComplement->getInterfaceIdForAddress(frame->getDest());
+            EV << destInterfaceIds.size() << " ports read from macTableComplement" << std::endl;
+            if (destInterfaceIds.size() > 1)
+                throw cRuntimeError("2) We must at most have one path from the core toward each destination!");
+            if (destInterfaceIds.size() > 0)
+                ie = ifTable->getInterfaceById(*destInterfaceIds.begin());
+        }
 
-        if (dropped_due_to_failure)
-            continue;
-
-        if (ie == nullptr)
-            throw cRuntimeError("mcast_cidr_core: ie should not be nullptr at this point.");
+        if (ie == nullptr) {
+            std::cout << packet_to_send->str() << std::endl;
+            throw cRuntimeError("mcast_cidr_cophy_header2re: ie should not be nullptr at this point.");
+        }
 
         EV << "CIDR to port " << ie->getIndex() << endl;
         correct_cidr_ports.insert(ie->getIndex());
@@ -3031,6 +3236,12 @@ void BouncingIeee8021dRelay::mcast_cidr_core(Packet *packet) {
             std::cout << "CIDR group id: " << cidr_group_id << endl;
             throw cRuntimeError("How is not port covered by cidr_group_id");
         }
+
+        // check if packet was dropped to switch to the dropped version of the packet
+        if (pkt_is_dropped) {
+            create_dropped_version_of_pkt(packet_to_send);
+        }
+
         dispatch(packet_to_send, ie);
     }
 
@@ -3084,12 +3295,14 @@ void BouncingIeee8021dRelay::mcast_cidr_agg(Packet *packet) {
     auto phy_header = packet->removeAtFront<EthernetPhyHeader>();
     auto eth_header = packet->removeAtFront<EthernetMacHeader>();
 
+    bool pkt_is_dropped = eth_header->getIs_pkt_dropped();
+
     std::string cidr_group_id = eth_header->getAgg_cidr_group_id();
     if (cidr_group_id.compare("") == 0 ||
             eth_header->getAgg_cidr_group_member_count() == 0)
         throw cRuntimeError("No CIDR info appended to the packet!");
 
-    if (eth_header->getCidr_base_flow_id() < 0) {
+    if (eth_header->getCidr_base_flow_id() <= 0) {
         EV << "We have not stored the base info yet... storing it..." << endl;
         eth_header->setCidr_base_flow_id(eth_header->getFlow_id());
         eth_header->setCidr_base_src_gpu_idx(eth_header->getSrc_gpu_idx());
@@ -3098,7 +3311,9 @@ void BouncingIeee8021dRelay::mcast_cidr_agg(Packet *packet) {
     unsigned int cidr_base_src_gpu_idx = eth_header->getCidr_base_src_gpu_idx();
     if (cidr_base_flow_id < 0 || cidr_base_src_gpu_idx < 0)
         throw cRuntimeError("Invalid cidr_base_flow_id or cidr_base_src_gpu_idx");
+    packet->insertAtFront(eth_header);
 
+    eth_header = packet->removeAtFront<EthernetMacHeader>();
     int input_port_idx = packet->getTag<InputPortTag>()->getInput_port_idx();
 
     std::set<unsigned int> correct_cidr_ports;
@@ -3114,6 +3329,9 @@ void BouncingIeee8021dRelay::mcast_cidr_agg(Packet *packet) {
         packet->setFrontIteratorPosition(b(0));
         auto m_phy_header = packet_to_send->removeAtFront<EthernetPhyHeader>();
         auto m_eth_header = packet_to_send->removeAtFront<EthernetMacHeader>();
+
+        m_eth_header->setDont_drop_again(eth_header->getDont_drop_again());
+
         m_eth_header->setHop_count(eth_header->getHop_count());
 
         m_eth_header->setCidr_base_flow_id(cidr_base_flow_id);
@@ -3142,6 +3360,11 @@ void BouncingIeee8021dRelay::mcast_cidr_agg(Packet *packet) {
             m_eth_header->insertInput_ports_passed(eth_header->getInput_ports_passed(input_port_idx));
         }
 
+        // preserve loss recovery request/response of the original packet
+        m_eth_header->setIs_loss_recovery_request(eth_header->getIs_loss_recovery_request());
+        m_eth_header->setIs_loss_recovery_response(eth_header->getIs_loss_recovery_response());
+        m_eth_header->setHierarchical_resent_from_source(eth_header->getHierarchical_resent_from_source());
+
         packet_to_send->insertAtFront(m_eth_header);
         packet_to_send->insertAtFront(m_phy_header);
         packet_to_send->setFrontIteratorPosition(packetPosition);
@@ -3155,13 +3378,18 @@ void BouncingIeee8021dRelay::mcast_cidr_agg(Packet *packet) {
         if (destInterfaceIds.size() > 0)
             ie = ifTable->getInterfaceById(*destInterfaceIds.begin());
 
-        bool dropped_due_to_failure = false;
-        if (drop_type == DROP_FAIL &&
-                    !frame->getIs_redundant_cidr_pkt())
-            dropped_due_to_failure = failure_check_and_reroute(packet_to_send, ie);
-
-        if (dropped_due_to_failure)
-            continue;
+        if (random_fail_prob > 0 && ie == nullptr) {
+            EV << "3) all output ports for this packet are failed... use a backup which would result in the packet being dropped anyway" << std::endl;
+            // use what is removed
+            if (macTableComplement == nullptr)
+                throw cRuntimeError("macTableComplement should not be nullptr here!");
+            destInterfaceIds = macTableComplement->getInterfaceIdForAddress(frame->getDest());
+            EV << destInterfaceIds.size() << " ports read from macTableComplement" << std::endl;
+            if (destInterfaceIds.size() > 1)
+                throw cRuntimeError("2) We must at most have one path from the core toward each destination!");
+            if (destInterfaceIds.size() > 0)
+                ie = ifTable->getInterfaceById(*destInterfaceIds.begin());
+        }
 
         if (ie == nullptr)
             throw cRuntimeError("mcast_cidr_agg: ie should not be nullptr at this point.");
@@ -3174,6 +3402,12 @@ void BouncingIeee8021dRelay::mcast_cidr_agg(Packet *packet) {
             std::cout << "CIDR group id: " << cidr_group_id << endl;
             throw cRuntimeError("How is not port covered by cidr_group_id");
         }
+
+        // check if packet was dropped to switch to the dropped version of the packet
+        if (pkt_is_dropped) {
+            create_dropped_version_of_pkt(packet_to_send);
+        }
+
         dispatch(packet_to_send, ie);
     }
 
@@ -3233,6 +3467,46 @@ void BouncingIeee8021dRelay::chooseDispatchType(Packet *packet, InterfaceEntry *
         return;
     }
 
+    bool is_pkt_dropped = frame->getIs_pkt_dropped();
+    if (is_pkt_dropped) {
+
+        if (frame->getCollective_alg() != BCAST_PARTIAL_MULTICAST)
+            throw cRuntimeError("For now, is packet dropped is only implemented for BCAST_PARTIAL_MULTICAST!");
+
+        int dropped_pkt_input_port = packet->getTag<InputPortTag>()->getInput_port_idx();
+
+        auto tmp_pkt = frame->getOriginal_pkt()->dup();
+        delete frame->getOriginal_pkt();
+        delete packet;
+        packet = tmp_pkt;
+
+        int original_pkt_input_port = packet->getTag<InputPortTag>()->getInput_port_idx();
+
+        if (original_pkt_input_port != dropped_pkt_input_port) {
+            // the input port of dropped packet to the original packet to stay consistent
+
+//            std::cout << original_pkt_input_port << std::endl;
+//            std::cout << dropped_pkt_input_port << std::endl;
+            packet->removeTagIfPresent<InputPortTag>();
+            packet->addTag<InputPortTag>()->setInput_port_idx(dropped_pkt_input_port);
+            EV << "updating input port tag from " << original_pkt_input_port << " to " <<
+                    dropped_pkt_input_port << std::endl;
+//            throw cRuntimeError("original_pkt_input_port != dropped_pkt_input_port");
+
+        }
+
+        b packetPosition = packet->getFrontOffset();
+        packet->setFrontIteratorPosition(b(0));
+        auto phy_header = packet->removeAtFront<EthernetPhyHeader>();
+        auto eth_header = packet->removeAtFront<EthernetMacHeader>();
+        eth_header->setIs_pkt_dropped(true);
+        packet->insertAtFront(eth_header);
+        packet->insertAtFront(phy_header);
+        packet->setFrontIteratorPosition(packetPosition);
+
+        frame = packet->peekAtFront<EthernetMacHeader>();
+    }
+
     std::string packet_name = packet->getName();
 
     std::list<int> destInterfaceIds = macTable->getInterfaceIdForAddress(frame->getDest());
@@ -3278,11 +3552,12 @@ void BouncingIeee8021dRelay::chooseDispatchType(Packet *packet, InterfaceEntry *
     if (!is_packet_arp_or_broadcast) {
         EV << "packet is not ARP or broadcast" << endl;
         InterfaceEntry *ie2;
-        bool dropped_due_to_failure = false;
 
         if (use_power_of_n_lb) {
             //forward the packet towards destination using power of n choices
             // Considering ports towards servers as well
+
+            throw cRuntimeError("use_power_of_n_lb was not used for this project!");
 
             EV << "Finding random interface for packet " << packet->str() << endl;
             ie2 = find_interface_to_fw_randomly_power_of_n(packet, true);
@@ -3311,6 +3586,13 @@ void BouncingIeee8021dRelay::chooseDispatchType(Packet *packet, InterfaceEntry *
                 isSwitchCore() &&
                 isPacketAppropriateForMulticast(packet_name) &&
                 frame->getMulticast_pkt_in_programmable_core()) {
+
+            if (is_pkt_dropped)
+                throw cRuntimeError("is_pkt_dropped not implemented with partial_mcast_programmable_cores");
+
+            if (random_fail_prob > 0)
+                throw cRuntimeError("failure/drop is not implemented for partial_mcast_programmable_cores!!");
+
             EV << "Reached programmable core... Perform multicast" << endl;
             mcast_programmable_core(packet);
             delete packet;
@@ -3388,15 +3670,26 @@ void BouncingIeee8021dRelay::chooseDispatchType(Packet *packet, InterfaceEntry *
                 ie2 = ifTable->getInterfaceById(*it);
             }
         } else {
+
+            // for ecmp and spray
+            if (random_fail_prob > 0 && ie == nullptr) {
+                EV << "1) all output ports for this packet are failed... use a backup which would result in the packet being dropped anyway" << std::endl;
+                // use what is removed
+                if (macTableComplement == nullptr)
+                    throw cRuntimeError("macTableComplement should not be nullptr here!");
+                destInterfaceIds = macTableComplement->getInterfaceIdForAddress(frame->getDest());
+                EV << destInterfaceIds.size() << " ports read from macTableComplement" << std::endl;
+                if (destInterfaceIds.size() > 0) {
+                    unsigned int random_idx = getRandomIdx();
+                    int outputPortNum = random_idx % destInterfaceIds.size();
+                    std::list<int>::iterator it = destInterfaceIds.begin();
+                    std::advance(it, outputPortNum);
+                    ie = ifTable->getInterfaceById(*destInterfaceIds.begin());
+                }
+            }
+
             ie2 = ie;
         }
-
-        if (drop_type == DROP_FAIL &&
-                    isPacketAppropriateForMulticast(packet_name) &&
-                    !frame->getIs_redundant_cidr_pkt())
-            dropped_due_to_failure = failure_check_and_reroute(packet, ie2);
-        if (dropped_due_to_failure)
-            return;
 
         if (ie2 == nullptr && packet_name.compare("data") != 0) {
             auto potential_output_port_itr = mac_address_to_port_map.find(frame->getDest().str());
@@ -5009,101 +5302,6 @@ void BouncingIeee8021dRelay::generate_and_send_bolt_src_packet(Packet *packet, i
     handleAndDispatchFrame(src_packet);
 }
 
-bool BouncingIeee8021dRelay::failure_check_and_reroute(Packet *packet, InterfaceEntry *ie, bool skip_notif) {
-
-    if (random_fail_prob <= 0)
-        return false;
-
-    if (failure_or_recovery_notif_pkt == nullptr) {
-        failure_or_recovery_notif_pkt = packet->dup();
-        create_notif_header(failure_or_recovery_notif_pkt, "failure_or_recovery_notif");
-    }
-
-    auto frame = packet->peekAtFront<EthernetMacHeader>();
-    if (drop_type == DROP_FAIL) {
-        if (ie == nullptr || is_link_failed(ie->getIndex(), packet)) {
-            EV << "Dropping packet due to failure" << endl;
-
-            simtime_t earliest_recovery_time;    // just a big simtime
-            bool recovery_time_loaded = false;
-
-            if (ie == nullptr) {
-                // find the minimum recovery time
-                EV << "ie is null" << endl;
-                auto potential_output_port_itr = mac_address_to_port_map.find(frame->getDest().str());
-                if (potential_output_port_itr == mac_address_to_port_map.end()) {
-                    std::cout << frame->getDest().str() << endl;
-                    throw cRuntimeError("potential_output_port_itr == mac_address_to_port_map.end()");
-                }
-                for (auto potential_port : potential_output_port_itr->second) {
-                    EV << "Looking for potential port " << potential_port << endl;
-                    auto port_itr = port_to_recovery_time.find(potential_port);
-                    if (port_itr == port_to_recovery_time.end())
-                        continue;
-                    if (recovery_time_loaded)
-                        earliest_recovery_time = std::min(earliest_recovery_time, port_itr->second);
-                    else {
-                        recovery_time_loaded = true;
-                        earliest_recovery_time = port_itr->second;
-                    }
-                }
-            } else {
-                EV << "Looking for port " << ie->getIndex() << endl;
-                auto port_itr = port_to_recovery_time.find(ie->getIndex());
-                if (port_itr == port_to_recovery_time.end())
-                    throw cRuntimeError("2) No recovery time found!");
-                recovery_time_loaded = true;
-                earliest_recovery_time = port_itr->second;
-            }
-
-            if (!recovery_time_loaded) {
-                EV << getFullPath() << ": Recovery time not found showing that this port is not directly failed just entries where removed as a part of another incident" << endl;
-                earliest_recovery_time = 0;
-            }
-
-            EV << "earliest_recovery_time: " << earliest_recovery_time << endl;
-
-
-            if (skip_notif) {
-                EV << "Skipping drop notification" << endl;
-                delete packet;
-            } else {
-                switch (recovery_type) {
-                    case DROP_NOTIF:
-                        send_drop_notif(packet, earliest_recovery_time);
-                        break;
-                    case DEFLECT_ON_DROP:
-                        deflect_on_drop(packet);
-                        break;
-                    default:
-                        throw cRuntimeError("No failure recovery method indicated!");
-                }
-                EV << "Notif pkt is: " << packet->str() << endl;
-                b pkt_porition = packet->getFrontOffset();
-                packet->setFrontIteratorPosition(b(0));
-                auto m_phy_header =
-                        packet->removeAtFront<EthernetPhyHeader>();
-                auto m_eth_header =
-                        packet->removeAtFront<EthernetMacHeader>();
-                if (m_eth_header->getInput_ports_passedArraySize() == 0)
-                    throw cRuntimeError("5) How is getInput_ports_passedArraySize() == 0");
-                unsigned int output_port = m_eth_header->getInput_ports_passed(
-                        m_eth_header->getInput_ports_passedArraySize() - 1);
-                m_eth_header->eraseInput_ports_passed(
-                        m_eth_header->getInput_ports_passedArraySize() - 1);
-                packet->insertAtFront(m_eth_header);
-                packet->insertAtFront(m_phy_header);
-                packet->setFrontIteratorPosition(pkt_porition);
-                EV << "Notif packet is being sent to port " << output_port << endl;
-                ie = ifTable->getInterface(output_port);
-                dispatch(packet, ie);
-            }
-            return true;
-        }
-    }
-    return false;
-}
-
 void BouncingIeee8021dRelay::dispatch(Packet *packet, InterfaceEntry *ie)
 {
     EV << "BouncingIeee8021dRelay::dispatch" << endl;
@@ -5268,6 +5466,61 @@ void BouncingIeee8021dRelay::dispatch(Packet *packet, InterfaceEntry *ie)
     if (ie2->getInterfaceId() != ie->getInterfaceId()) {
         EV << "The output interface has changed as a result of bouncing." << endl;
         emit(feedBackPacketGeneratedSignal, packet->getId());
+    }
+
+    std::string pkt_name = packet->getName();
+    if (isPacketAppropriateForMulticast(pkt_name) &&
+            !frame->getIs_pkt_dropped() &&
+            !frame->getIs_loss_recovery_request() &&
+            !frame->getIs_loss_recovery_response() &&
+            !frame->getDont_drop_again() &&
+            !frame->getIs_last_pkt() &&
+            !frame->getIs_redundant_cidr_pkt()) {
+        // drop type is checked in each should_drop function
+
+        if (drop_type == DROP_FAIL && failure_or_recovery_notif_pkt == nullptr) {
+            failure_or_recovery_notif_pkt = packet->dup();
+            create_notif_header(failure_or_recovery_notif_pkt, "");
+        }
+
+
+        bool drop_random = should_drop_random();
+        bool link_failed = is_link_failed(ie2->getIndex());
+
+        simtime_t recovery_time = simTime();
+        if (link_failed) {
+
+            if (port_to_recovery_time.find(ie2->getIndex()) != port_to_recovery_time.end())
+                recovery_time = port_to_recovery_time[ie2->getIndex()];
+
+            b position = packet->getFrontOffset();
+            packet->setFrontIteratorPosition(b(0));
+            auto phy_header_temp = packet->removeAtFront<EthernetPhyHeader>();
+            auto mac_header_temp = packet->removeAtFront<EthernetMacHeader>();
+            mac_header_temp->setRecovery_time(recovery_time);
+
+
+            packet->insertAtFront(mac_header_temp);
+            packet->insertAtFront(phy_header_temp);
+            packet->setFrontIteratorPosition(position);
+        }
+
+        EV << "recovery time set to " << recovery_time << std::endl;
+
+        bool should_drop_pkt = drop_random || link_failed;
+        if (should_drop_pkt) {
+            EV << "packet is considered dropped!" << std::endl;
+            if (recovery_type == RING_BASED || recovery_type == HIERARCHICAL) {
+                EV << "Dropping packet... with ring-based/hierarchical recovery type" << std::endl;
+                create_dropped_version_of_pkt(packet);
+                EV << "Packet's dropped version: " << packet->str() << std::endl;
+            } else if (recovery_type == DROP_NOTIF) {
+                send_drop_notif(packet, recovery_time);
+                return;
+            } else {
+                throw cRuntimeError("Unsupported recovery type for random drop!!");
+            }
+        }
     }
 
     module_path_string = switch_name + ".eth[" + std::to_string(ie2->getIndex()) + "].mac";

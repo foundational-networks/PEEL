@@ -78,6 +78,7 @@ class INET_API AugmentedEtherMacFullDuplex : public EtherMacBase
     int global_collective_alg = -1;
     int global_collective = -1;
     double get_rate_dividier(int collective, int algorithm, bool optireduce_in_reduction_phase);
+    void inject_in_stored_base_packets_for_recovery(Packet *packet);
     void pushPacketToQeueue(Packet *packet);
   public:
 
@@ -110,6 +111,7 @@ class INET_API AugmentedEtherMacFullDuplex : public EtherMacBase
     bool use_fattree = false;
 
     int server_module_index;
+    int mac_module_index;
 
     // INA
     std::unordered_map<unsigned long, std::unordered_set<unsigned long>> queryid_to_seqnum_map;
@@ -169,6 +171,74 @@ class INET_API AugmentedEtherMacFullDuplex : public EtherMacBase
 
     bool limit_all_to_all_rate = false;
 
+    // DROP RECOVERY
+    int recovery_type = -1;
+    enum DropRecovery {DROP_NOTIF = 1, RING_BASED, HIERARCHICAL};
+    // (base flow id, base src_gpu, seq num) --> (timeout message, original packet)
+    std::map<std::tuple<unsigned long, int, unsigned long>, std::tuple<cMessage*, Packet*>> lost_pkt_map;
+    // (query id, src gpu) --> seq num set
+    std::map<std::tuple<unsigned long, int>, std::set<unsigned long>> query_srcgpu_to_lostseqs; // packets that are lost and not requested yet
+    std::set<std::tuple<unsigned long, int, unsigned long>> query_srcgpu_to_waitedseqs; // packets that are lost and not retreive yet (we have sent the request and are waiting for retransmission)
+    // (query id, src_gpu, seq num) --> list recovery request packet
+    std::map<std::tuple<unsigned long, int, unsigned long>, std::list<Packet*>> recovery_request_waitlist;
+    std::set<std::tuple<unsigned long, int>> last_pkt_arrived_record;
+    // (query id, src gpu) --> max sequence number successfully received
+    std::map<std::tuple<unsigned long, int>, unsigned long> hierarchical_max_seqnum;
+    double recovery_wait_time = -1;
+    double hierarchical_src_recovery_wait_time = -1;
+    void create_and_send_recovery_request(unsigned long query_id,
+            int src_gpu_idx,
+            unsigned long seqnum);
+    void send_p2p_recovery_request(int recovery_server_idx, Packet* pkt, int specific_source_mac_index=-1);
+    virtual void last_pkt_arrived(unsigned long query_id, int src_gpu_idx, bool is_last_packet_origin=false);
+    void create_recovery_request_version_of_pkt(Packet *packet, MacAddress recovery_mac_address);
+    virtual bool is_pkt_lost_for_this_server(unsigned long query_id,
+            int src_gpu_idx,
+            unsigned long seq_num,
+            bool is_first_caller=false);
+    virtual void fullfill_waiting_requests(unsigned long query_id,
+            int src_gpu_idx,
+            unsigned long seq_num,
+            bool is_first_caller=false,
+            bool hierarchical_resent_from_source=false);
+    virtual void erase_from_waitedseqs(unsigned long query_id,
+            int src_gpu_idx,
+            unsigned long seq_num,
+            bool is_first_caller=false);
+
+    // notif based drop recovery
+    // (flow id, seq num) --> packet
+    std::map<std::tuple<unsigned long, unsigned long>, Packet*> stored_base_packets_for_recovery;
+    Packet* create_base_pkt_deep_copy(Packet *base_packet);
+    void perform_deep_delete(Packet *pkt);
+    void perform_deep_delete(const Packet *pkt);
+    // flow id, seqnum
+    std::set<std::tuple<unsigned long, unsigned long>> previously_retransmitted;
+    // (flow id, seq num) --> list of receivers recorded
+    std::map<std::tuple<unsigned long, unsigned long>, std::set<int>> successful_receivers_recorded;
+    void notify_src_of_completed(unsigned long base_flowid, int src_gpu_idx,
+                    unsigned long seq_num, int src_server_idx);
+    virtual void pkt_successfully_rcvd(unsigned long base_flowid,
+                    unsigned long seq_num, int receiver_server_idx);
+    // (flow id, seq num) --> packet
+    std::map<std::tuple<unsigned long, unsigned long>, Packet*> send_later;
+
+    // hierarchical recovery
+    unsigned long computeHash(std::string s);
+    std::tuple<int,int> compute_custodian_elevator_nodes(unsigned long queryid,
+            int srcgpu, unsigned long seqnum);
+    // (flow id, src_gpu, seq num) --> list of messages waiting to be re-transmitted by the source
+    // here I'm using flow id instead of query id because source cares about mutlicast tree and nothing else
+    std::map<std::tuple<unsigned long, int, unsigned long>, std::pair<cMessage*, std::list<Packet*>>> packets_waiting_at_source;
+    unsigned int get_max_num_retrans_requests(Packet* packet);
+    unsigned int get_max_num_retrans_requests(int agg_cidr_group_member_count, int core_cidr_group_member_count);
+    void appropriately_retransmit_packets_at_the_source(unsigned long flow_id,
+            int src_gpu_idx,
+            unsigned long seqnum,
+            int max_ratrans_num);
+    double hierarchical_src_broadcast_threshold = -1;
+    double hierarchical_seqnum_gap_bdp_multiplier = -1;
+    int get_hierarchical_pkt_num_gap_threshold();
 };
 
 #endif // ifndef __INET_AUGMENTEDETHERMACFULLDUPLEX_H

@@ -306,8 +306,6 @@ int UDPLongAllgatherInitiatorApp::collective_alg_str_to_type(std::string collect
         return BCAST_BINARY_TREE;
     } else if (collective_alg_type_str.compare("ring") == 0) {
         return BCAST_RING;
-    } else if (collective_alg_type_str.compare("multiwrite") == 0) {
-        return BCAST_MULTIWRITE;
     } else if (collective_alg_type_str.compare("optireduce") == 0) {
         return BCAST_OPTIREDUCE;
     } else if (collective_alg_type_str.compare("network_assisted") == 0) {
@@ -506,8 +504,7 @@ int UDPLongAllgatherInitiatorApp::get_dst_server_num_per_query(int m_collective_
             m_collective_alg == BCAST_RING ||
             m_collective_alg == BCAST_SINGLE_SENDER ||
             m_collective_alg == BCAST_INA ||
-            m_collective_alg == BCAST_OPTIREDUCE ||
-            m_collective_alg == BCAST_MULTIWRITE)
+            m_collective_alg == BCAST_OPTIREDUCE)
         return num_flows_per_ml_query;
     return num_flows_per_ml_query - num_gpus;
 }
@@ -1513,6 +1510,21 @@ void UDPLongAllgatherInitiatorApp::initialize(int stage)
 
         // use elmo
         use_elmo = bool(par("use_elmo"));
+
+        // For SC 2024 Ring based loss recovery for multicast
+        std::string recovery_type_str = par("recovery_type");
+        if (recovery_type_str.compare("notif") == 0) {
+            recovery_type = DROP_NOTIF;
+        }
+//        else if (recovery_type_str.compare("deflect") == 0) {
+//            recovery_type = DEFLECT_ON_DROP;
+//        }
+        else if (recovery_type_str.compare("ring_based") == 0) {
+            recovery_type = RING_BASED;
+        } else if (recovery_type_str.compare("hierarchical") == 0) {
+            recovery_type = HIERARCHICAL;
+        } else
+           recovery_type = -1;
     }
 }
 
@@ -2280,6 +2292,17 @@ Packet* UDPLongAllgatherInitiatorApp::create_packet(std::string pkt_name,
     payload->setCollective_type(msg_info->m_collective_type);
     payload->setCollective_alg_type(msg_info->m_collective_alg);
 
+    if (msg_info->m_collective_alg == BCAST_PARTIAL_MULTICAST) {
+        // we might want to enable loss recovery for peel
+        if (recovery_type == RING_BASED || recovery_type == HIERARCHICAL) {
+            // seq num starts from one
+            if (remaining_bytes <= pkt_size.get()) {
+                payload->setIs_last_pkt(true);
+                EV << "Packet is last!!" << std::endl;
+            }
+        }
+    }
+
     payload->setAgg_cidr_group_id(msg_info->agg_cidr_group_id.c_str());
     payload->setAgg_cidr_group_member_count(msg_info->agg_cidr_group_member_count);
     payload->setCore_cidr_group_id(msg_info->core_cidr_group_id.c_str());
@@ -2342,6 +2365,16 @@ Packet* UDPLongAllgatherInitiatorApp::create_packet(std::string pkt_name,
             payload->insertFlow_ids_list(*itr);
 
     }
+
+    if (msg_info->m_collective_alg == BCAST_PARTIAL_MULTICAST &&
+            (recovery_type > 0) &&
+            msg_info->involved_servers_list.size() == 0)
+        throw cRuntimeError("msg_info->m_collective_alg == BCAST_PARTIAL_MULTICAST && \
+            recovery_type == RING_BASED or HIERARCHICAL &&\
+            msg_info->involved_servers_list.size() == 0");
+
+    for (auto involved_server : msg_info->involved_servers_list)
+        payload->insertInvolved_servers_list(involved_server);
 
     if (msg_info->m_collective_alg == BCAST_INA) {
         payload->setIna_leaf_aggregation_num(msg_info->leaf_aggregation_num);
@@ -3237,241 +3270,6 @@ void UDPLongAllgatherInitiatorApp::snd_allgather_optireduce(int collective_type,
     source_gpu_round_trip_idx %= num_gpus;
 }
 
-void UDPLongAllgatherInitiatorApp::snd_allgather_multiwrite(int collective_type, unsigned long query_id) {
-    EV << "UDPLongAllgatherInitiatorApp::snd_allgather_multiwrite()" << endl;
-//    unsigned long query_id = get_query_id();
-    int m_collective_type = collective_type;
-    unsigned long num_dst_servers_per_query = get_dst_server_num_per_query(BCAST_MULTIWRITE);
-    unsigned long flow_size = get_flow_size(m_collective_type, BCAST_MULTIWRITE);
-
-    if (use_autoccl)
-        throw cRuntimeError("autoccl does not work with multiwrite!");
-
-    if (num_dst_servers_per_query == 0)
-        throw cRuntimeError("num_dst_servers_per_query == 0");
-
-    std::set<int> dst_server_set;
-    std::list<int> tmp_dst_server_idx_list;
-    std::list<int> tmp_gpu_idx_list;
-    std::list<unsigned long> tmp_flow_id_list;
-    for (int i = 0; i < num_dst_servers_per_query; i++){
-        // in dst_server_idx there can be this server's index, so filter it out
-        int m_dst_server_idx = get_dst_server_idx();
-
-        if (m_dst_server_idx == parent_index) {
-            get_dst_gpu_idx();
-            get_flow_id();
-            continue;
-        }
-
-        if (dst_server_set.find(m_dst_server_idx) == dst_server_set.end()) {
-            dst_server_set.insert(m_dst_server_idx);
-        }
-        tmp_dst_server_idx_list.push_back(m_dst_server_idx);
-        tmp_gpu_idx_list.push_back(get_dst_gpu_idx());
-        tmp_flow_id_list.push_back(get_flow_id());
-    }
-    int num_dst_servers = dst_server_set.size();
-
-    int dst_server_idx_list[num_dst_servers];
-    int gpu_idx_list[num_dst_servers];
-    int observed_gpus_count_per_server[num_dst_servers];
-    unsigned long flow_id_list[num_dst_servers];
-    // initiate dst gpus to -1
-    for (int i = 0; i < num_dst_servers; i++) {
-        gpu_idx_list[i] = -1;
-        observed_gpus_count_per_server[i] = 0;
-    }
-
-    int idx = 0;
-    std::unordered_map<int, int> server_to_idx_map;
-    std::random_device rd;
-    std::mt19937 gen(rd());
-    auto dst_gpu_itr = tmp_gpu_idx_list.begin();
-    auto flow_id_itr = tmp_flow_id_list.begin();
-    for (auto dst_server_itr = tmp_dst_server_idx_list.begin();
-            dst_server_itr != tmp_dst_server_idx_list.end();
-            dst_server_itr++) {
-        // in dst_server_idx there can be this server's index, so filter it out
-        int m_idx;
-        int m_dst_server_idx = (*dst_server_itr);
-        if (server_to_idx_map.find(m_dst_server_idx) == server_to_idx_map.end()) {
-//            std::cout << "new server... assign to idx " << idx << std::endl;
-            server_to_idx_map.insert(std::make_pair(m_dst_server_idx, idx));
-            m_idx = idx;
-            idx++;
-        } else {
-//            std::cout << "server previously found with idx " << server_to_idx_map[m_dst_server_idx] << std::endl;
-            m_idx = server_to_idx_map[m_dst_server_idx];
-        }
-        if (m_idx >= num_dst_servers)
-            throw cRuntimeError("we are seeing more indexes than num_dst_servers");
-        dst_server_idx_list[m_idx] = m_dst_server_idx;
-        int m_dst_gpu_idx = (*dst_gpu_itr);
-        observed_gpus_count_per_server[m_idx]++;
-        if (gpu_idx_list[m_idx] == -1)
-            gpu_idx_list[m_idx] = m_dst_gpu_idx;
-        else {
-            // here, I'm deploying Reservoir Sampling to ensure that every observed GPU
-            // has a fair shot of getting slected
-            // why not choose randomly from 0 to num_gpus? what if a gpu for a server is missing due to fragmentation!
-            std::uniform_int_distribution<> dist(1, observed_gpus_count_per_server[m_idx]);
-            int value = dist(gen);
-//            std::cout << "randomly generated value is " << value << std::endl;
-
-            if (value == 1) {
-                gpu_idx_list[m_idx] = m_dst_gpu_idx;
-            }
-        }
-        flow_id_list[m_idx] = (*flow_id_itr);
-        dst_gpu_itr++;
-        flow_id_itr++;
-    }
-
-    EV << "chosen servers and gpus: " << std::endl;
-    for (int i = 0; i < num_dst_servers; i++) {
-        EV << dst_server_idx_list[i] << " , " << gpu_idx_list[i] << std::endl;
-    }
-
-    int src_leaf_idx = int(parent_index * 1.0 / num_servers_under_each_leaf);
-    int src_pod_idx = 0;
-    if (use_fattree) {
-        src_pod_idx = int(parent_index * 1.0 / (num_servers_under_each_leaf * fattree_k / 2.0));
-    }
-
-    EV << "src: " << parent_index << ", src_leaf: " << src_leaf_idx <<
-                    ", src_pod: " << src_pod_idx << std::endl;
-
-    // server idx to which we should connect to --> list of <dst servers under this candidate, dst gpus, flow ids>
-    std::map<int, std::list<std::tuple<int, int, unsigned long>>> candidate_server_to_dst_info;
-
-    for (int i = 0; i < num_dst_servers; i++) {
-        if (dst_server_idx_list[i] == parent_index)
-            throw cRuntimeError("parent_index must have been removed already!");
-
-        int dst_leaf_idx = int(dst_server_idx_list[i] * 1.0 / num_servers_under_each_leaf);
-        int dst_pod_idx = 0;
-        if (use_fattree) {
-            dst_pod_idx = int(dst_server_idx_list[i] * 1.0 /
-                    (num_servers_under_each_leaf * fattree_k / 2.0));
-        }
-
-        EV << "dst: " << dst_server_idx_list[i] << ", dst_leaf: " << dst_leaf_idx <<
-                ", dst_pod: " << dst_pod_idx << std::endl;
-
-        int candidate_server;
-        if (src_pod_idx != dst_pod_idx) {
-            EV << "source and dst do not share a pod so we shoudl select a random candidate under the pod" << std::endl;
-            int pod_start_server = dst_pod_idx * int(num_servers_under_each_leaf * fattree_k / 2.0);
-            // end is not in the range [start, end)
-            int pod_end_server = pod_start_server + int(num_servers_under_each_leaf * fattree_k / 2.0);
-            // this ensures that all the servers under the same pod go to the same candidate
-            std::string hash_input = getFullName();
-            hash_input += std::to_string(dst_pod_idx);
-            candidate_server = pod_start_server +
-                    (std::hash<std::string>{}(hash_input) %
-                    int(num_servers_under_each_leaf * fattree_k / 2.0));
-        } else if (src_leaf_idx != dst_leaf_idx) {
-            EV << "source and dst share the pod but not the leaf, so select a random candidate under the leaf" << std::endl;
-            int leaf_start_server = dst_leaf_idx * num_servers_under_each_leaf;
-            int leaf_end_server = leaf_start_server + num_servers_under_each_leaf;
-            // this ensures that all the servers under the same leaf go to the same candidate
-            std::string hash_input = getFullName();
-            hash_input += std::to_string(dst_leaf_idx);
-            candidate_server = leaf_start_server +
-                    (std::hash<std::string>{}(hash_input) % num_servers_under_each_leaf);
-        } else {
-            EV << "source and dst are under the same leaf. send it directly to the dst" << std::endl;
-            candidate_server = dst_server_idx_list[i];
-        }
-
-        EV << "Chosen candidate server: " << candidate_server << std::endl;
-        if (candidate_server_to_dst_info.find(candidate_server) ==
-                candidate_server_to_dst_info.end()) {
-            std::list<std::tuple<int, int, unsigned long>> tmp_list;
-            candidate_server_to_dst_info[candidate_server] = tmp_list;
-        }
-
-        EV << "candidate: " << candidate_server << " --> " <<
-                "server: " << dst_server_idx_list[i] <<
-                ", gpu: " << gpu_idx_list[i] <<
-                ", flow id: " << flow_id_list[i] << std::endl;
-
-        candidate_server_to_dst_info[candidate_server].push_back(
-                std::make_tuple(dst_server_idx_list[i], gpu_idx_list[i], flow_id_list[i]));
-    }
-
-    for (auto candidate_itr = candidate_server_to_dst_info.begin();
-            candidate_itr != candidate_server_to_dst_info.end();
-            candidate_itr++) {
-        int server_idx;
-        int gpu_idx;
-        unsigned long flow_id;
-
-        if (candidate_itr->second.size() == 1) {
-            EV << "Server " << candidate_itr->first << " is only candidate for itself!" << std::endl;
-            auto m_tuple = (*candidate_itr->second.begin());
-            server_idx = std::get<0>(m_tuple);
-            gpu_idx = std::get<1>(m_tuple);
-            flow_id = std::get<2>(m_tuple);
-        } else if (candidate_itr->second.size() > 1) {
-            auto m_tuple = (*candidate_itr->second.begin());
-            server_idx = candidate_itr->first;
-            // if the candidate is already in the list, use the appropriate gpu and flowid
-            bool info_found = false;
-            for (auto tmp_it : candidate_itr->second) {
-                if (server_idx == std::get<0>(tmp_it)) {
-                    gpu_idx = std::get<1>(tmp_it);
-                    flow_id = std::get<2>(tmp_it);
-                    EV << "Server " << server_idx << " is part of dsts, using gpu: " << gpu_idx <<
-                            ", and flow_id: " << flow_id << std::endl;
-                    info_found = true;
-                    break;
-                }
-            }
-            if (!info_found) {
-                gpu_idx = std::get<1>(m_tuple);
-                flow_id = std::get<2>(m_tuple);
-                EV << "Server " << server_idx << " is NOT part of dsts, using gpu: " << gpu_idx <<
-                        ", and flow_id: " << flow_id << std::endl;
-            }
-        } else
-            throw cRuntimeError("We have a candidate assigned to empty list!?");
-
-        auto new_msg = new AllgatherCustomCollectiveMsgInitiatorInfo(flow_id, flow_size,
-                query_id, num_dst_servers);
-        for (auto itr = candidate_itr->second.begin();
-                itr != candidate_itr->second.end();
-                itr++) {
-            auto m_tuple = (*itr);
-            int tmp_server_idx = std::get<0>(m_tuple);
-            int tmp_gpu_idx = std::get<1>(m_tuple);
-            int tmp_flow_id = std::get<2>(m_tuple);
-            new_msg->responsibility.push_back(tmp_server_idx);
-            new_msg->responsibility_gpu.push_back(tmp_gpu_idx);
-            new_msg->responsiblity_flow_ids.push_back(tmp_flow_id);
-        }
-
-        new_msg->m_collective_type = m_collective_type;
-        new_msg->m_collective_alg = BCAST_MULTIWRITE;
-
-        // also add intra-host broadcast delay as extra delay
-        new_msg->extra_delay = get_intra_host_pass_delay(flow_size).dbl();
-
-        if (server_idx == parent_index) {
-            throw cRuntimeError("transmission to self does not work with multiwrite!");
-        } else {
-            EV << "initiator: Sending to server " << server_idx << ", gpu " << gpu_idx << std::endl;
-            init_socket(server_idx, gpu_idx);
-            send_msg(server_idx, gpu_idx, new_msg, source_gpu_round_trip_idx);
-        }
-
-    }
-
-    source_gpu_round_trip_idx++;
-    source_gpu_round_trip_idx %= num_gpus;
-}
-
 void UDPLongAllgatherInitiatorApp::snd_allgather_ring(int collective_type, unsigned long query_id) {
     EV << "UDPLongAllgatherInitiatorApp::snd_allgather_ring()" << endl;
 //    unsigned long query_id = get_query_id();
@@ -3888,6 +3686,11 @@ void UDPLongAllgatherInitiatorApp::snd_allgather_partial_mcast(int collective_ty
     unsigned long num_dst_servers_per_query = get_dst_server_num_per_query(BCAST_PARTIAL_MULTICAST);
     int m_collective_type = collective_type;
 
+    std::set<unsigned long> involved_server_idx_set;
+    std::list<unsigned long> involved_server_idx_list;
+    involved_server_idx_set.insert(parent_index);
+    involved_server_idx_list.push_back(parent_index);
+
     switch (m_collective_type) {
         case ALL_TO_ALL_V:
         case REDUCE:
@@ -3969,6 +3772,12 @@ void UDPLongAllgatherInitiatorApp::snd_allgather_partial_mcast(int collective_ty
 
         if (m_dst_server_idx == parent_index)
             throw cRuntimeError("We have already filtered out self data, why are we seeing this!");
+
+        if (involved_server_idx_set.find(m_dst_server_idx) ==
+                involved_server_idx_set.end()) {
+            involved_server_idx_set.insert(m_dst_server_idx);
+            involved_server_idx_list.push_back(m_dst_server_idx);
+        }
 
         unsigned long m_flow_id = get_flow_id();
         flow_ids_tmp_list.push_back(m_flow_id);
@@ -4240,6 +4049,9 @@ void UDPLongAllgatherInitiatorApp::snd_allgather_partial_mcast(int collective_ty
             new_msg->extra_delay = msg_passing_delay;
             new_msg->partial_mcast_original_flow_size_bytes = original_flow_size;
             new_msg->in_src_sharding = should_chunk_data;
+
+            for (auto involved_server : involved_server_idx_list)
+                new_msg->involved_servers_list.push_back(involved_server);
 
             if (new_msg->network_assisted_destination_idx_list.size() == 0 ||
                     new_msg->network_assisted_dst_gpu_idx_list.size() == 0)
@@ -4748,8 +4560,6 @@ void UDPLongAllgatherInitiatorApp::handleMessageWhenUp(cMessage *msg)
                     snd_allgather_partial_mcast(m_collective, query_id);
                 } else if (m_collective_alg == BCAST_RING){
                     snd_allgather_ring(m_collective, query_id);
-                } else if (m_collective_alg == BCAST_MULTIWRITE){
-                    snd_allgather_multiwrite(m_collective, query_id);
                 } else if (m_collective_alg == BCAST_OPTIREDUCE){
                     snd_allgather_optireduce(m_collective, query_id);
                 } else if (m_collective_alg == BCAST_INA){
