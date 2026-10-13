@@ -6,6 +6,9 @@ This branch is intended for simulating PEEL and its baselines in a hierarchical 
 
 First, clone the repository (skip this step if you have already cloned it):
 
+**Note:** Some workload submodules use Git LFS. Make sure Git LFS is installed before initializing the submodules:
+
+
 ```bash
 git clone https://github.com/foundational-networks/PEEL.git
 cd PEEL

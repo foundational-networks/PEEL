@@ -51,6 +51,10 @@ Since the sample contains a single Broadcast operation for each configuration, t
 
 The config files for large-scale simulations can be used for evaluating Broadcast, All-Gather, and All-Reduce operations in HPN.
 
+**Storage requirements:** The large-scale HPN workload repositories occupy approximately **2.1 GB in compressed `.db.bz2` form** and expand to approximately **27 GB when decompressed**.
+
+The workload extraction scripts copy the compressed workload files into the `distributions/` directory and decompress them before running the simulations, while the original compressed submodules remain on disk. Simulation outputs and logs require additional space as well. We therefore recommend having at least **35 GB of free disk space**, and preferably **40 GB or more**, before running the large-scale HPN experiments.
+
 To run the large-scale simulations, first make sure that you are in the right directory (`PEEL/Omnet_Sims/dc_simulations/simulations/sims`) and then use the following commands to extract the distribution files, run the simulations, extract the results, and plot the figures:
 
 ```bash
