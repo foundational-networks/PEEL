@@ -1,4 +1,4 @@
-# Closing the Bandwidth Gap in AI Datacenters with Scalable Multicast — Paper Artifacts
+# PEEL: Scalable Multicast for AI Datacenters — Paper Artifacts
 
 This repository contains the artifacts associated with our paper, including network simulations, physical testbed experiments, and FPGA implementations.
 The repository is organized into multiple components, each with its own `README` containing setup, execution, and validation instructions. In particular:
